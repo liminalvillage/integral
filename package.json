@@ -1,0 +1,46 @@
+{
+  "name": "integral-platform",
+  "version": "0.1.0",
+  "description": "INTEGRAL: Federated post-monetary cooperative economic system using Nostr",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest",
+    "lint": "eslint src/"
+  },
+  "keywords": [
+    "integral",
+    "nostr",
+    "cooperative",
+    "economics",
+    "federated",
+    "post-monetary"
+  ],
+  "author": "Integral Collective",
+  "license": "AGPL-3.0",
+  "dependencies": {
+    "nostr-tools": "^2.7.0",
+    "websocket-polyfill": "^0.0.3",
+    "uuid": "^9.0.1",
+    "level": "^8.0.0",
+    "better-sqlite3": "^9.4.3",
+    "eventemitter3": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/uuid": "^9.0.7",
+    "@types/better-sqlite3": "^7.6.8",
+    "typescript": "^5.3.3",
+    "tsx": "^4.7.0",
+    "vitest": "^1.2.0",
+    "eslint": "^8.56.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
