@@ -13,7 +13,9 @@
 		Settings,
 		ChevronLeft,
 		ChevronRight,
-		Hexagon
+		Hexagon,
+		BookOpen,
+		HelpCircle
 	} from 'lucide-svelte';
 
 	const navItems = [
@@ -23,7 +25,8 @@
 		{ href: '/itc', icon: Clock, label: 'Time Credits (ITC)', section: 'itc' },
 		{ href: '/cos', icon: Factory, label: 'Production (COS)', section: 'cos' },
 		{ href: '/frs', icon: Activity, label: 'Feedback (FRS)', section: 'frs' },
-		{ href: '/federation', icon: Globe, label: 'Federation', section: 'federation' }
+		{ href: '/federation', icon: Globe, label: 'Federation', section: 'federation' },
+		{ href: '/docs', icon: BookOpen, label: 'Documentation', section: 'docs' }
 	];
 
 	$: currentPath = $page.url.pathname;

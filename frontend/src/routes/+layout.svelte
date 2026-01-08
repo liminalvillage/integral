@@ -1,17 +1,32 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
 	import { Sidebar } from '$lib/components/layout';
-	import { sidebarOpen, nodeStatus, errorMessage, successMessage } from '$lib/stores';
-	import { fade } from 'svelte/transition';
-	import { X, CheckCircle, AlertCircle } from 'lucide-svelte';
+	import { Toast } from '$lib/components/ui';
+	import { OnboardingModal } from '$lib/components/onboarding';
+	import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
+	import { sidebarOpen, nodeStatus } from '$lib/stores';
 
-	// Mock node status for development
+	let showOnboarding = false;
+	let mounted = false;
+
 	onMount(() => {
+		mounted = true;
+
+		// Check if user has completed onboarding
+		if (browser) {
+			const onboardingComplete = localStorage.getItem('integral_onboarding_complete');
+			if (!onboardingComplete) {
+				showOnboarding = true;
+			}
+		}
+
+		// Mock node status for development
 		nodeStatus.set({
 			nodeId: 'node_abc12345',
 			isRunning: true,
-			publicKey: 'npub1...',
+			publicKey: 'npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
 			connectedRelays: 3,
 			knownNodes: 7,
 			subsystems: {
@@ -23,53 +38,39 @@
 			}
 		});
 	});
+
+	function handleOnboardingComplete() {
+		showOnboarding = false;
+	}
 </script>
 
-<div class="min-h-screen bg-surface-950 bg-grid-pattern bg-grid">
-	<Sidebar />
+<svelte:head>
+	<title>INTEGRAL - Cooperative Economic System</title>
+	<meta name="description" content="A federated, post-monetary, cybernetic cooperative economic platform" />
+</svelte:head>
 
-	<main
-		class="transition-all duration-300"
-		class:ml-64={$sidebarOpen}
-		class:ml-20={!$sidebarOpen}
-	>
-		<slot />
-	</main>
+<ErrorBoundary>
+	<div class="min-h-screen bg-surface-950 bg-grid-pattern bg-grid">
+		<Sidebar />
 
-	<!-- Toast Notifications -->
-	{#if $errorMessage}
-		<div
-			class="fixed bottom-4 right-4 z-50"
-			transition:fade={{ duration: 200 }}
+		<main
+			class="transition-all duration-300"
+			class:ml-64={$sidebarOpen}
+			class:ml-20={!$sidebarOpen}
 		>
-			<div class="flex items-center gap-3 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg backdrop-blur-sm">
-				<AlertCircle size={20} class="text-red-400" />
-				<span class="text-sm text-red-300">{$errorMessage}</span>
-				<button
-					class="p-1 hover:bg-red-500/20 rounded"
-					on:click={() => errorMessage.set(null)}
-				>
-					<X size={16} class="text-red-400" />
-				</button>
-			</div>
-		</div>
-	{/if}
+			<slot />
+		</main>
 
-	{#if $successMessage}
-		<div
-			class="fixed bottom-4 right-4 z-50"
-			transition:fade={{ duration: 200 }}
-		>
-			<div class="flex items-center gap-3 px-4 py-3 bg-eco-500/10 border border-eco-500/30 rounded-lg backdrop-blur-sm">
-				<CheckCircle size={20} class="text-eco-400" />
-				<span class="text-sm text-eco-300">{$successMessage}</span>
-				<button
-					class="p-1 hover:bg-eco-500/20 rounded"
-					on:click={() => successMessage.set(null)}
-				>
-					<X size={16} class="text-eco-400" />
-				</button>
-			</div>
-		</div>
-	{/if}
-</div>
+		<!-- Toast Notifications -->
+		<Toast />
+
+		<!-- Onboarding Modal -->
+		{#if mounted}
+			<OnboardingModal
+				bind:show={showOnboarding}
+				on:complete={handleOnboardingComplete}
+				on:skip={handleOnboardingComplete}
+			/>
+		{/if}
+	</div>
+</ErrorBoundary>
