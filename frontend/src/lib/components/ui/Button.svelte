@@ -35,6 +35,7 @@
 	{type}
 	class="{variantClasses[variant]} {sizeClasses[size]} {icon ? 'btn-icon' : ''} {$$props.class || ''}"
 	disabled={disabled || loading}
+	on:click
 	on:click={handleClick}
 >
 	{#if loading}
