@@ -7,6 +7,7 @@
 
 	export let title = '';
 	export let subtitle = '';
+	export let description = '';
 	export let showCreateButton = false;
 	export let createButtonLabel = 'Create';
 

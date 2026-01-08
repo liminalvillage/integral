@@ -13,17 +13,67 @@
 		<label for={id} class="label">{label}</label>
 	{/if}
 
-	<input
-		{id}
-		{type}
-		{placeholder}
-		{disabled}
-		bind:value
-		class="input {error ? 'input-error' : ''}"
-		on:input
-		on:focus
-		on:blur
-	/>
+	{#if type === 'password'}
+		<input
+			{id}
+			type="password"
+			{placeholder}
+			{disabled}
+			bind:value
+			class="input {error ? 'input-error' : ''}"
+			on:input
+			on:focus
+			on:blur
+		/>
+	{:else if type === 'email'}
+		<input
+			{id}
+			type="email"
+			{placeholder}
+			{disabled}
+			bind:value
+			class="input {error ? 'input-error' : ''}"
+			on:input
+			on:focus
+			on:blur
+		/>
+	{:else if type === 'number'}
+		<input
+			{id}
+			type="number"
+			{placeholder}
+			{disabled}
+			bind:value
+			class="input {error ? 'input-error' : ''}"
+			on:input
+			on:focus
+			on:blur
+		/>
+	{:else if type === 'search'}
+		<input
+			{id}
+			type="search"
+			{placeholder}
+			{disabled}
+			bind:value
+			class="input {error ? 'input-error' : ''}"
+			on:input
+			on:focus
+			on:blur
+		/>
+	{:else}
+		<input
+			{id}
+			type="text"
+			{placeholder}
+			{disabled}
+			bind:value
+			class="input {error ? 'input-error' : ''}"
+			on:input
+			on:focus
+			on:blur
+		/>
+	{/if}
 
 	{#if error}
 		<p class="text-sm text-red-400">{error}</p>

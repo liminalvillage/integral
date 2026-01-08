@@ -174,7 +174,7 @@
     description="Learn how INTEGRAL works and how to use it effectively"
   />
 
-  <Tabs {tabs} bind:active={activeTab} />
+  <Tabs {tabs} bind:activeTab />
 
   <div class="mt-6">
     {#if activeTab === 'overview'}

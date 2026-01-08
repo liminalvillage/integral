@@ -37,12 +37,16 @@
 		expert: 'Expert'
 	};
 
-	const skillTierColors = {
+	const skillTierColors: Record<string, string> = {
 		low: 'info',
 		medium: 'primary',
 		high: 'warning',
 		expert: 'success'
-	} as const;
+	};
+
+	function getSkillTierColor(tier: string): string {
+		return skillTierColors[tier] || 'info';
+	}
 
 	// Mock data
 	onMount(() => {
@@ -360,7 +364,7 @@
 				<div class="space-y-3">
 					{#each Object.entries(skillTierLabels) as [tier, label]}
 						<div class="flex items-center justify-between p-3 rounded-lg bg-surface-800/50">
-							<Badge variant={skillTierColors[tier as keyof typeof skillTierColors]}>
+							<Badge variant={getSkillTierColor(tier)}>
 								{label}
 							</Badge>
 							<span class="text-lg font-semibold text-surface-100">

@@ -29,12 +29,12 @@
 		{ id: 'memory', label: 'Memory' }
 	];
 
-	const severityColors = {
+	const severityColors: Record<string, string> = {
 		info: 'info',
 		low: 'primary',
 		moderate: 'warning',
 		critical: 'danger'
-	} as const;
+	};
 
 	const findingTypeLabels: Record<string, string> = {
 		ecological_overshoot: 'Ecological Overshoot',
@@ -271,7 +271,7 @@
 						<span class="text-lg font-semibold text-warning-400">0.38</span>
 					</div>
 					<ProgressBar value={38} max={100} color="warning" />
-					<p class="text-xs text-surface-500 mt-1">Target: < 0.3</p>
+					<p class="text-xs text-surface-500 mt-1">Target: &lt; 0.3</p>
 				</div>
 				<div>
 					<div class="flex items-center justify-between mb-2">
@@ -279,7 +279,7 @@
 						<span class="text-lg font-semibold text-primary-400">0.31</span>
 					</div>
 					<ProgressBar value={69} max={100} color="primary" />
-					<p class="text-xs text-surface-500 mt-1">Target: < 0.5</p>
+					<p class="text-xs text-surface-500 mt-1">Target: &lt; 0.5</p>
 				</div>
 			</div>
 		</Card>
