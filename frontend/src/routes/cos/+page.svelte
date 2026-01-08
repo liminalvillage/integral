@@ -3,6 +3,8 @@
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, StatCard, ProgressBar, EmptyState } from '$lib/components/ui';
 	import { productionPlans } from '$lib/stores';
+	import { cosApi } from '$lib/api/client';
+	import { toasts } from '$lib/stores/toast';
 	import type { ProductionPlan, TaskInstance } from '$lib/types';
 	import {
 		Factory,
@@ -23,6 +25,18 @@
 	let activeTab = 'plans';
 	let showCreateModal = false;
 	let tasks: TaskInstance[] = [];
+
+	// Create plan form state
+	let selectedVersionId = 'ver_1';
+	let newBatchSize = 10;
+	let isCreatingPlan = false;
+
+	// Task action state
+	let startingTaskId: string | null = null;
+	let completingTaskId: string | null = null;
+	let showCompleteModal = false;
+	let taskToComplete: TaskInstance | null = null;
+	let completeTaskHours = 0;
 
 	const tabs = [
 		{ id: 'plans', label: 'Production Plans' },
@@ -136,6 +150,65 @@
 			month: 'short',
 			day: 'numeric'
 		});
+	}
+
+	async function handleCreatePlan() {
+		if (!selectedVersionId || newBatchSize < 1) {
+			toasts.error('Validation Error', 'Please select a design and enter a valid batch size');
+			return;
+		}
+
+		isCreatingPlan = true;
+		try {
+			const plan = await cosApi.createPlan({
+				versionId: selectedVersionId,
+				batchSize: newBatchSize
+			});
+			productionPlans.update(list => [plan, ...list]);
+			toasts.success('Plan Created', `Batch #${plan.batchId.split('_')[1]} created with ${plan.batchSize} units`);
+			showCreateModal = false;
+			newBatchSize = 10;
+		} catch (error) {
+			toasts.error('Failed to Create Plan', error instanceof Error ? error.message : 'Unknown error');
+		} finally {
+			isCreatingPlan = false;
+		}
+	}
+
+	async function handleStartTask(task: TaskInstance) {
+		startingTaskId = task.id;
+		try {
+			const updated = await cosApi.startTask(task.id);
+			tasks = tasks.map(t => t.id === task.id ? updated : t);
+			toasts.success('Task Started', `Task ${task.definitionId} is now in progress`);
+		} catch (error) {
+			toasts.error('Failed to Start Task', error instanceof Error ? error.message : 'Unknown error');
+		} finally {
+			startingTaskId = null;
+		}
+	}
+
+	function openCompleteModal(task: TaskInstance) {
+		taskToComplete = task;
+		completeTaskHours = task.actualHours || 0;
+		showCompleteModal = true;
+	}
+
+	async function handleCompleteTask() {
+		if (!taskToComplete) return;
+
+		completingTaskId = taskToComplete.id;
+		try {
+			const updated = await cosApi.completeTask(taskToComplete.id, completeTaskHours);
+			tasks = tasks.map(t => t.id === taskToComplete!.id ? updated : t);
+			toasts.success('Task Completed', `Task ${taskToComplete.definitionId} marked as done`);
+			showCompleteModal = false;
+			taskToComplete = null;
+		} catch (error) {
+			toasts.error('Failed to Complete Task', error instanceof Error ? error.message : 'Unknown error');
+		} finally {
+			completingTaskId = null;
+		}
 	}
 </script>
 
@@ -306,11 +379,11 @@
 								<td class="table-cell">
 									<div class="flex gap-1">
 										{#if task.status === 'pending'}
-											<Button size="sm" variant="success" icon>
+											<Button size="sm" variant="success" icon on:click={() => handleStartTask(task)} loading={startingTaskId === task.id}>
 												<Play size={14} />
 											</Button>
 										{:else if task.status === 'in_progress'}
-											<Button size="sm" variant="secondary" icon>
+											<Button size="sm" variant="secondary" icon on:click={() => openCompleteModal(task)} loading={completingTaskId === task.id}>
 												<CheckCircle size={14} />
 											</Button>
 										{/if}
@@ -437,16 +510,28 @@
 	<div class="space-y-4">
 		<div>
 			<label class="label">Design Version</label>
-			<select class="input">
-				<option>Solar Panel Mount v2.3</option>
-				<option>Modular Greenhouse Frame</option>
-				<option>Community Tool Library Rack</option>
+			<select class="input" bind:value={selectedVersionId}>
+				<option value="ver_1">Solar Panel Mount v2.3</option>
+				<option value="ver_2">Modular Greenhouse Frame</option>
+				<option value="ver_4">Community Tool Library Rack</option>
 			</select>
 		</div>
-		<Input label="Batch Size" type="number" placeholder="10" />
+		<Input label="Batch Size" type="number" bind:value={newBatchSize} />
 	</div>
 	<svelte:fragment slot="footer">
-		<Button variant="secondary" on:click={() => showCreateModal = false}>Cancel</Button>
-		<Button variant="primary">Create Plan</Button>
+		<Button variant="secondary" on:click={() => showCreateModal = false} disabled={isCreatingPlan}>Cancel</Button>
+		<Button variant="primary" on:click={handleCreatePlan} loading={isCreatingPlan}>Create Plan</Button>
+	</svelte:fragment>
+</Modal>
+
+<!-- Complete Task Modal -->
+<Modal bind:open={showCompleteModal} title="Complete Task" size="sm">
+	<div class="space-y-4">
+		<p class="text-surface-400">Mark task <span class="text-surface-200 font-medium">{taskToComplete?.definitionId}</span> as complete.</p>
+		<Input label="Actual Hours Worked" type="number" step="0.5" bind:value={completeTaskHours} />
+	</div>
+	<svelte:fragment slot="footer">
+		<Button variant="secondary" on:click={() => showCompleteModal = false} disabled={completingTaskId !== null}>Cancel</Button>
+		<Button variant="success" on:click={handleCompleteTask} loading={completingTaskId !== null}>Complete Task</Button>
 	</svelte:fragment>
 </Modal>

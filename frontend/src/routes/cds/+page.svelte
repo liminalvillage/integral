@@ -3,6 +3,8 @@
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, EmptyState, ProgressBar } from '$lib/components/ui';
 	import { issues, selectedIssue } from '$lib/stores';
+	import { cdsApi } from '$lib/api/client';
+	import { toasts } from '$lib/stores/toast';
 	import type { Issue, Scenario } from '$lib/types';
 	import {
 		Plus,
@@ -23,6 +25,10 @@
 	let showCreateModal = false;
 	let newIssueTitle = '';
 	let newIssueDescription = '';
+	let newIssueCategory = 'governance';
+	let isCreatingIssue = false;
+	let votingIssueId: string | null = null;
+	let votingLevel: string | null = null;
 
 	const tabs = [
 		{ id: 'all', label: 'All Issues', count: 0 },
@@ -122,11 +128,55 @@
 		});
 	}
 
-	function handleCreateIssue() {
-		// API call would go here
-		showCreateModal = false;
-		newIssueTitle = '';
-		newIssueDescription = '';
+	async function handleCreateIssue() {
+		if (!newIssueTitle.trim() || !newIssueDescription.trim()) {
+			toasts.error('Validation Error', 'Title and description are required');
+			return;
+		}
+
+		isCreatingIssue = true;
+		try {
+			const issue = await cdsApi.createIssue({
+				title: newIssueTitle.trim(),
+				description: newIssueDescription.trim(),
+				authorId: 'current_user'
+			});
+			issues.update(list => [issue, ...list]);
+			toasts.success('Issue Created', `"${issue.title}" has been submitted`);
+			showCreateModal = false;
+			newIssueTitle = '';
+			newIssueDescription = '';
+			newIssueCategory = 'governance';
+		} catch (error) {
+			toasts.error('Failed to Create Issue', error instanceof Error ? error.message : 'Unknown error');
+		} finally {
+			isCreatingIssue = false;
+		}
+	}
+
+	async function handleVote(issue: Issue, supportLevel: 'support' | 'neutral' | 'concern') {
+		votingIssueId = issue.id;
+		votingLevel = supportLevel;
+
+		try {
+			const scenarios = await cdsApi.listScenarios(issue.id);
+			if (scenarios.length === 0) {
+				toasts.warning('No Scenarios', 'This issue has no scenarios to vote on yet');
+				return;
+			}
+
+			await cdsApi.castVote(scenarios[0].id, {
+				participantId: 'current_user',
+				supportLevel: supportLevel
+			});
+
+			toasts.success('Vote Cast', `Your ${supportLevel} vote has been recorded`);
+		} catch (error) {
+			toasts.error('Failed to Vote', error instanceof Error ? error.message : 'Unknown error');
+		} finally {
+			votingIssueId = null;
+			votingLevel = null;
+		}
 	}
 </script>
 
@@ -239,15 +289,15 @@
 							</div>
 							<ProgressBar value={78} max={100} color="primary" />
 							<div class="flex gap-2 mt-3">
-								<Button size="sm" variant="success">
+								<Button size="sm" variant="success" on:click={() => handleVote(issue, 'support')} loading={votingIssueId === issue.id && votingLevel === 'support'}>
 									<ThumbsUp size={14} />
 									Support
 								</Button>
-								<Button size="sm" variant="secondary">
+								<Button size="sm" variant="secondary" on:click={() => handleVote(issue, 'neutral')} loading={votingIssueId === issue.id && votingLevel === 'neutral'}>
 									<Minus size={14} />
 									Neutral
 								</Button>
-								<Button size="sm" variant="ghost">
+								<Button size="sm" variant="ghost" on:click={() => handleVote(issue, 'concern')} loading={votingIssueId === issue.id && votingLevel === 'concern'}>
 									<ThumbsDown size={14} />
 									Concern
 								</Button>
@@ -278,7 +328,7 @@
 		</div>
 		<div>
 			<label class="label">Category</label>
-			<select class="input">
+			<select class="input" bind:value={newIssueCategory}>
 				<option value="governance">Governance</option>
 				<option value="infrastructure">Infrastructure</option>
 				<option value="policy">Policy</option>
@@ -288,7 +338,7 @@
 		</div>
 	</div>
 	<svelte:fragment slot="footer">
-		<Button variant="secondary" on:click={() => showCreateModal = false}>Cancel</Button>
-		<Button variant="primary" on:click={handleCreateIssue}>Create Issue</Button>
+		<Button variant="secondary" on:click={() => showCreateModal = false} disabled={isCreatingIssue}>Cancel</Button>
+		<Button variant="primary" on:click={handleCreateIssue} loading={isCreatingIssue}>Create Issue</Button>
 	</svelte:fragment>
 </Modal>

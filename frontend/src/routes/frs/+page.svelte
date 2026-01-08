@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { Header, PageContainer } from '$lib/components/layout';
-	import { Card, Button, Badge, Tabs, StatCard, ProgressBar, EmptyState } from '$lib/components/ui';
+	import { Card, Button, Badge, Tabs, StatCard, ProgressBar, EmptyState, Modal, Input } from '$lib/components/ui';
 	import { findings } from '$lib/stores';
+	import { toasts } from '$lib/stores/toast';
 	import type { DiagnosticFinding, Recommendation } from '$lib/types';
 	import {
 		Activity,
@@ -21,6 +23,20 @@
 
 	let activeTab = 'overview';
 	let recommendations: Recommendation[] = [];
+
+	// Recommendation actions state
+	let selectedRecommendation: Recommendation | null = null;
+	let showReviewModal = false;
+	let showModifyModal = false;
+	let modifiedSummary = '';
+	let modifiedRationale = '';
+
+	// Record learning state
+	let showRecordLearningModal = false;
+	let learningTitle = '';
+	let learningNarrative = '';
+	let learningType: 'lesson' | 'incident' | 'outcome' = 'lesson';
+	let isRecordingLearning = false;
 
 	const tabs = [
 		{ id: 'overview', label: 'Overview' },
@@ -128,6 +144,86 @@
 		if (hours < 24) return `${hours}h ago`;
 		return `${Math.floor(hours / 24)}d ago`;
 	}
+
+	function handleViewAllFindings() {
+		activeTab = 'findings';
+	}
+
+	function handleReviewRecommendation(rec: Recommendation) {
+		selectedRecommendation = rec;
+		showReviewModal = true;
+	}
+
+	function handleDismissRecommendation(rec: Recommendation) {
+		recommendations = recommendations.filter(r => r.id !== rec.id);
+		toasts.info('Recommendation Dismissed', 'The recommendation has been dismissed');
+	}
+
+	function handleAcceptAndRoute(rec: Recommendation) {
+		const routes: Record<string, string> = {
+			CDS: '/cds',
+			OAD: '/oad',
+			ITC: '/itc',
+			COS: '/cos',
+			FED: '/federation'
+		};
+
+		sessionStorage.setItem('routed_recommendation', JSON.stringify(rec));
+		recommendations = recommendations.filter(r => r.id !== rec.id);
+		toasts.success('Recommendation Accepted', `Routing to ${rec.targetSystem}`);
+		goto(routes[rec.targetSystem] ?? '/');
+	}
+
+	function handleOpenModify(rec: Recommendation) {
+		selectedRecommendation = rec;
+		modifiedSummary = rec.summary;
+		modifiedRationale = rec.rationale;
+		showModifyModal = true;
+	}
+
+	function handleSaveModification() {
+		if (!selectedRecommendation) return;
+
+		recommendations = recommendations.map(r =>
+			r.id === selectedRecommendation!.id
+				? { ...r, summary: modifiedSummary, rationale: modifiedRationale }
+				: r
+		);
+		toasts.success('Recommendation Updated', 'Changes have been saved');
+		showModifyModal = false;
+		selectedRecommendation = null;
+	}
+
+	async function handleRecordLearning() {
+		if (!learningTitle.trim() || !learningNarrative.trim()) {
+			toasts.error('Validation Error', 'Title and narrative are required');
+			return;
+		}
+
+		isRecordingLearning = true;
+		try {
+			// Store in localStorage as no API endpoint exists
+			const memories = JSON.parse(localStorage.getItem('integral_memories') ?? '[]');
+			memories.push({
+				id: `mem_${Date.now()}`,
+				type: learningType,
+				title: learningTitle,
+				narrative: learningNarrative,
+				createdAt: new Date().toISOString()
+			});
+			localStorage.setItem('integral_memories', JSON.stringify(memories));
+
+			toasts.success('Learning Recorded', 'Institutional memory updated');
+			showRecordLearningModal = false;
+			learningTitle = '';
+			learningNarrative = '';
+			learningType = 'lesson';
+		} catch (error) {
+			toasts.error('Failed to Record', error instanceof Error ? error.message : 'Unknown error');
+		} finally {
+			isRecordingLearning = false;
+		}
+	}
 </script>
 
 <Header
@@ -197,7 +293,7 @@
 			<Card>
 				<div class="flex items-center justify-between mb-4">
 					<h3 class="section-header mb-0">Recent Findings</h3>
-					<Button variant="ghost" size="sm">
+					<Button variant="ghost" size="sm" on:click={handleViewAllFindings}>
 						View All <ArrowRight size={14} />
 					</Button>
 				</div>
@@ -244,8 +340,8 @@
 							<p class="text-sm text-surface-200 mb-2">{rec.summary}</p>
 							<p class="text-xs text-surface-500">{rec.rationale}</p>
 							<div class="flex gap-2 mt-3">
-								<Button size="sm" variant="primary">Review</Button>
-								<Button size="sm" variant="ghost">Dismiss</Button>
+								<Button size="sm" variant="primary" on:click={() => handleReviewRecommendation(rec)}>Review</Button>
+								<Button size="sm" variant="ghost" on:click={() => handleDismissRecommendation(rec)}>Dismiss</Button>
 							</div>
 						</div>
 					{/each}
@@ -335,9 +431,9 @@
 							<h4 class="text-surface-100 font-medium mb-2">{rec.summary}</h4>
 							<p class="text-sm text-surface-400 mb-4">{rec.rationale}</p>
 							<div class="flex gap-2">
-								<Button variant="primary" size="sm">Accept & Route to {rec.targetSystem}</Button>
-								<Button variant="secondary" size="sm">Modify</Button>
-								<Button variant="ghost" size="sm">Dismiss</Button>
+								<Button variant="primary" size="sm" on:click={() => handleAcceptAndRoute(rec)}>Accept & Route to {rec.targetSystem}</Button>
+								<Button variant="secondary" size="sm" on:click={() => handleOpenModify(rec)}>Modify</Button>
+								<Button variant="ghost" size="sm" on:click={() => handleDismissRecommendation(rec)}>Dismiss</Button>
 							</div>
 						</div>
 					{/each}
@@ -353,10 +449,73 @@
 				description="Historical learnings and institutional knowledge"
 				icon={Brain}
 			>
-				<Button slot="action" variant="primary">
+				<Button slot="action" variant="primary" on:click={() => showRecordLearningModal = true}>
 					Record Learning
 				</Button>
 			</EmptyState>
 		</Card>
 	{/if}
 </PageContainer>
+
+<!-- Review Recommendation Modal -->
+<Modal bind:open={showReviewModal} title="Review Recommendation" size="md">
+	{#if selectedRecommendation}
+		<div class="space-y-4">
+			<div class="flex items-center gap-2">
+				<Badge variant="info">{selectedRecommendation.targetSystem}</Badge>
+				<Badge variant={severityColors[selectedRecommendation.severity]}>{selectedRecommendation.severity}</Badge>
+			</div>
+			<div>
+				<h4 class="text-sm font-medium text-surface-400 mb-1">Summary</h4>
+				<p class="text-surface-200">{selectedRecommendation.summary}</p>
+			</div>
+			<div>
+				<h4 class="text-sm font-medium text-surface-400 mb-1">Rationale</h4>
+				<p class="text-surface-300">{selectedRecommendation.rationale}</p>
+			</div>
+		</div>
+	{/if}
+	<svelte:fragment slot="footer">
+		<Button variant="ghost" on:click={() => { showReviewModal = false; handleDismissRecommendation(selectedRecommendation!); }}>Dismiss</Button>
+		<Button variant="secondary" on:click={() => { showReviewModal = false; handleOpenModify(selectedRecommendation!); }}>Modify</Button>
+		<Button variant="primary" on:click={() => { showReviewModal = false; handleAcceptAndRoute(selectedRecommendation!); }}>Accept & Route</Button>
+	</svelte:fragment>
+</Modal>
+
+<!-- Modify Recommendation Modal -->
+<Modal bind:open={showModifyModal} title="Modify Recommendation" size="md">
+	<div class="space-y-4">
+		<Input label="Summary" bind:value={modifiedSummary} />
+		<div>
+			<label class="label">Rationale</label>
+			<textarea class="input min-h-[80px] resize-y" bind:value={modifiedRationale}></textarea>
+		</div>
+	</div>
+	<svelte:fragment slot="footer">
+		<Button variant="secondary" on:click={() => showModifyModal = false}>Cancel</Button>
+		<Button variant="primary" on:click={handleSaveModification}>Save Changes</Button>
+	</svelte:fragment>
+</Modal>
+
+<!-- Record Learning Modal -->
+<Modal bind:open={showRecordLearningModal} title="Record Institutional Learning" size="md">
+	<div class="space-y-4">
+		<Input label="Title" placeholder="Brief title for this learning" bind:value={learningTitle} />
+		<div>
+			<label class="label">Type</label>
+			<select class="input" bind:value={learningType}>
+				<option value="lesson">Lesson Learned</option>
+				<option value="incident">Incident Record</option>
+				<option value="outcome">Outcome Documentation</option>
+			</select>
+		</div>
+		<div>
+			<label class="label">Narrative</label>
+			<textarea class="input min-h-[120px] resize-y" placeholder="Describe the learning, context, and implications..." bind:value={learningNarrative}></textarea>
+		</div>
+	</div>
+	<svelte:fragment slot="footer">
+		<Button variant="secondary" on:click={() => showRecordLearningModal = false} disabled={isRecordingLearning}>Cancel</Button>
+		<Button variant="primary" on:click={handleRecordLearning} loading={isRecordingLearning}>Record Learning</Button>
+	</svelte:fragment>
+</Modal>

@@ -3,7 +3,9 @@
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, EmptyState, ProgressBar } from '$lib/components/ui';
 	import { designVersions } from '$lib/stores';
-	import type { DesignVersion, EcoAssessment } from '$lib/types';
+	import { oadApi } from '$lib/api/client';
+	import { toasts } from '$lib/stores/toast';
+	import type { DesignVersion, EcoAssessment, CertificationRecord } from '$lib/types';
 	import {
 		Plus,
 		Lightbulb,
@@ -22,6 +24,19 @@
 	let activeTab = 'all';
 	let showCreateModal = false;
 	let selectedVersion: DesignVersion | null = null;
+
+	// Create design form state
+	let newDesignName = '';
+	let newDesignPurpose = '';
+	let newDesignRequirements = '';
+	let isCreatingDesign = false;
+
+	// View details state
+	let showDetailsModal = false;
+	let selectedDesignDetails: DesignVersion | null = null;
+	let designEcoAssessment: EcoAssessment | null = null;
+	let designCertification: CertificationRecord | null = null;
+	let isLoadingDetails = false;
 
 	const tabs = [
 		{ id: 'all', label: 'All Designs', count: 0 },
@@ -117,6 +132,65 @@
 			month: 'short',
 			day: 'numeric'
 		});
+	}
+
+	async function handleCreateDesign() {
+		if (!newDesignName.trim() || !newDesignPurpose.trim()) {
+			toasts.error('Validation Error', 'Name and purpose are required');
+			return;
+		}
+
+		isCreatingDesign = true;
+		try {
+			const requirements = newDesignRequirements
+				.split('\n')
+				.map(r => r.trim())
+				.filter(r => r.length > 0);
+
+			const spec = await oadApi.createSpec({
+				purpose: newDesignPurpose.trim(),
+				functionalRequirements: requirements
+			});
+
+			const version = await oadApi.createVersion({
+				specId: spec.id,
+				label: newDesignName.trim(),
+				authors: ['current_user'],
+				parameters: {}
+			});
+
+			designVersions.update(list => [version, ...list]);
+			toasts.success('Design Created', `"${version.label}" has been created`);
+			showCreateModal = false;
+			newDesignName = '';
+			newDesignPurpose = '';
+			newDesignRequirements = '';
+		} catch (error) {
+			toasts.error('Failed to Create Design', error instanceof Error ? error.message : 'Unknown error');
+		} finally {
+			isCreatingDesign = false;
+		}
+	}
+
+	async function handleViewDetails(design: DesignVersion) {
+		selectedDesignDetails = design;
+		showDetailsModal = true;
+		isLoadingDetails = true;
+		designEcoAssessment = null;
+		designCertification = null;
+
+		try {
+			const [eco, cert] = await Promise.all([
+				oadApi.getEcoAssessment(design.id).catch(() => null),
+				oadApi.getCertification(design.id).catch(() => null)
+			]);
+			designEcoAssessment = eco;
+			designCertification = cert;
+		} catch (error) {
+			console.error('Failed to fetch design details', error);
+		} finally {
+			isLoadingDetails = false;
+		}
 	}
 </script>
 
@@ -238,7 +312,7 @@
 
 					<div class="mt-auto pt-3 border-t border-surface-800 flex items-center justify-between">
 						<span class="text-xs text-surface-500">{formatDate(design.createdAt)}</span>
-						<Button size="sm" variant="ghost">
+						<Button size="sm" variant="ghost" on:click={() => handleViewDetails(design)}>
 							View Details
 							<ChevronRight size={14} />
 						</Button>
@@ -255,12 +329,14 @@
 		<Input
 			label="Design Name"
 			placeholder="e.g., Solar Panel Mount v1.0"
+			bind:value={newDesignName}
 		/>
 		<div>
 			<label class="label">Purpose</label>
 			<textarea
 				class="input min-h-[80px] resize-y"
 				placeholder="What problem does this design solve?"
+				bind:value={newDesignPurpose}
 			></textarea>
 		</div>
 		<div>
@@ -268,11 +344,78 @@
 			<textarea
 				class="input min-h-[80px] resize-y"
 				placeholder="List the key requirements (one per line)"
+				bind:value={newDesignRequirements}
 			></textarea>
 		</div>
 	</div>
 	<svelte:fragment slot="footer">
-		<Button variant="secondary" on:click={() => showCreateModal = false}>Cancel</Button>
-		<Button variant="primary">Create Design</Button>
+		<Button variant="secondary" on:click={() => showCreateModal = false} disabled={isCreatingDesign}>Cancel</Button>
+		<Button variant="primary" on:click={handleCreateDesign} loading={isCreatingDesign}>Create Design</Button>
+	</svelte:fragment>
+</Modal>
+
+<!-- Design Details Modal -->
+<Modal bind:open={showDetailsModal} title={selectedDesignDetails?.label ?? 'Design Details'} size="lg">
+	{#if selectedDesignDetails}
+		<div class="space-y-4">
+			<div class="flex items-center gap-2">
+				<Badge variant={statusColors[selectedDesignDetails.status] ?? 'info'}>
+					{selectedDesignDetails.status === 'under_review' ? 'Under Review' : selectedDesignDetails.status.charAt(0).toUpperCase() + selectedDesignDetails.status.slice(1)}
+				</Badge>
+				{#if selectedDesignDetails.status === 'certified'}
+					<Badge variant="success"><CheckCircle size={12} class="mr-1" /> Certified</Badge>
+				{/if}
+			</div>
+
+			<div>
+				<h4 class="text-sm font-medium text-surface-400 mb-1">Authors</h4>
+				<p class="text-surface-200">{selectedDesignDetails.authors.join(', ')}</p>
+			</div>
+
+			<div>
+				<h4 class="text-sm font-medium text-surface-400 mb-1">Created</h4>
+				<p class="text-surface-200">{formatDate(selectedDesignDetails.createdAt)}</p>
+			</div>
+
+			{#if isLoadingDetails}
+				<div class="p-4 rounded-lg bg-surface-800/50 text-center">
+					<p class="text-sm text-surface-400">Loading details...</p>
+				</div>
+			{:else}
+				{#if designEcoAssessment}
+					<div class="p-4 rounded-lg bg-surface-800/50">
+						<h4 class="text-sm font-medium text-surface-400 mb-2">Ecological Assessment</h4>
+						<div class="grid grid-cols-2 gap-2 text-sm">
+							<div class="flex justify-between">
+								<span class="text-surface-500">Embodied Energy:</span>
+								<span class="text-surface-200">{designEcoAssessment.embodiedEnergy}</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-surface-500">Carbon:</span>
+								<span class="text-surface-200">{designEcoAssessment.carbonFootprint}</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-surface-500">Toxicity:</span>
+								<span class="text-surface-200">{designEcoAssessment.toxicityIndex}</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-surface-500">Recyclability:</span>
+								<span class="text-surface-200">{designEcoAssessment.recyclability}</span>
+							</div>
+						</div>
+					</div>
+				{/if}
+
+				{#if designCertification}
+					<div class="p-4 rounded-lg bg-eco-500/10 border border-eco-500/20">
+						<h4 class="text-sm font-medium text-eco-400 mb-2">Certification</h4>
+						<p class="text-sm text-surface-300">Certified by: {designCertification.certifiers.join(', ')}</p>
+					</div>
+				{/if}
+			{/if}
+		</div>
+	{/if}
+	<svelte:fragment slot="footer">
+		<Button variant="secondary" on:click={() => showDetailsModal = false}>Close</Button>
 	</svelte:fragment>
 </Modal>

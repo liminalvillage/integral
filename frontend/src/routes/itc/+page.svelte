@@ -3,6 +3,8 @@
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, StatCard, ProgressBar, EmptyState } from '$lib/components/ui';
 	import { itcAccounts, currentAccount } from '$lib/stores';
+	import { itcApi } from '$lib/api/client';
+	import { toasts } from '$lib/stores/toast';
 	import type { ITCAccount, LaborEvent } from '$lib/types';
 	import {
 		Clock,
@@ -22,6 +24,14 @@
 	let activeTab = 'overview';
 	let showRecordModal = false;
 	let recentLabor: LaborEvent[] = [];
+
+	// Labor recording form state
+	let laborTaskDescription = '';
+	let laborStartTime = '';
+	let laborEndTime = '';
+	let laborSkillTier = 'low';
+	let laborTaskId = '';
+	let isRecordingLabor = false;
 
 	const tabs = [
 		{ id: 'overview', label: 'Overview' },
@@ -113,6 +123,42 @@
 			hour: '2-digit',
 			minute: '2-digit'
 		});
+	}
+
+	function handleViewAllEvents() {
+		activeTab = 'labor';
+	}
+
+	async function handleRecordLabor() {
+		if (!laborTaskDescription.trim() || !laborStartTime || !laborEndTime) {
+			toasts.error('Validation Error', 'Task description and times are required');
+			return;
+		}
+
+		isRecordingLabor = true;
+		try {
+			const labor = await itcApi.recordLabor({
+				memberId: $currentAccount?.memberId ?? 'current_user',
+				taskId: laborTaskId || `task_${Date.now()}`,
+				taskLabel: laborTaskDescription.trim(),
+				startTime: laborStartTime,
+				endTime: laborEndTime,
+				skillTier: laborSkillTier
+			});
+			recentLabor = [labor, ...recentLabor];
+			toasts.success('Labor Recorded', `${labor.hours}h recorded for "${labor.taskLabel}"`);
+			showRecordModal = false;
+			// Reset form
+			laborTaskDescription = '';
+			laborStartTime = '';
+			laborEndTime = '';
+			laborSkillTier = 'low';
+			laborTaskId = '';
+		} catch (error) {
+			toasts.error('Failed to Record Labor', error instanceof Error ? error.message : 'Unknown error');
+		} finally {
+			isRecordingLabor = false;
+		}
 	}
 </script>
 
@@ -232,7 +278,7 @@
 						</div>
 					{/each}
 				</div>
-				<Button variant="ghost" class="w-full mt-4">
+				<Button variant="ghost" class="w-full mt-4" on:click={handleViewAllEvents}>
 					<History size={16} />
 					View All Events
 				</Button>
@@ -403,24 +449,24 @@
 <!-- Record Labor Modal -->
 <Modal bind:open={showRecordModal} title="Record Labor Event" size="lg">
 	<div class="space-y-4">
-		<Input label="Task Description" placeholder="What work was performed?" />
+		<Input label="Task Description" placeholder="What work was performed?" bind:value={laborTaskDescription} />
 		<div class="grid grid-cols-2 gap-4">
-			<Input label="Start Time" type="text" placeholder="2024-01-15 09:00" />
-			<Input label="End Time" type="text" placeholder="2024-01-15 13:30" />
+			<Input label="Start Time" type="datetime-local" bind:value={laborStartTime} />
+			<Input label="End Time" type="datetime-local" bind:value={laborEndTime} />
 		</div>
 		<div>
 			<label class="label">Skill Tier</label>
-			<select class="input">
+			<select class="input" bind:value={laborSkillTier}>
 				<option value="low">Basic (1.0x)</option>
 				<option value="medium">Intermediate (1.2x)</option>
 				<option value="high">Advanced (1.5x)</option>
 				<option value="expert">Expert (1.8x)</option>
 			</select>
 		</div>
-		<Input label="Task ID (optional)" placeholder="Link to COS task" />
+		<Input label="Task ID (optional)" placeholder="Link to COS task" bind:value={laborTaskId} />
 	</div>
 	<svelte:fragment slot="footer">
-		<Button variant="secondary" on:click={() => showRecordModal = false}>Cancel</Button>
-		<Button variant="primary">Record Labor</Button>
+		<Button variant="secondary" on:click={() => showRecordModal = false} disabled={isRecordingLabor}>Cancel</Button>
+		<Button variant="primary" on:click={handleRecordLabor} loading={isRecordingLabor}>Record Labor</Button>
 	</svelte:fragment>
 </Modal>
