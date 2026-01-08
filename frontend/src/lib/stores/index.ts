@@ -1,8 +1,10 @@
 /**
  * INTEGRAL Frontend Stores
+ *
+ * Provides reactive stores backed by HoloSphere local-first storage
  */
 
-import { writable, derived, readable } from 'svelte/store';
+import { writable, derived, readable, get } from 'svelte/store';
 import type {
 	NodeStatus,
 	DashboardStats,

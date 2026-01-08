@@ -581,7 +581,7 @@
 	{/if}
 	<svelte:fragment slot="footer">
 		<Button variant="secondary" on:click={() => showNodeDetailsModal = false}>Close</Button>
-		<Button variant="primary" on:click={() => { showNodeDetailsModal = false; openMessageNode(selectedNode!); }}>Send Message</Button>
+		<Button variant="primary" on:click={() => { showNodeDetailsModal = false; if (selectedNode) openMessageNode(selectedNode); }}>Send Message</Button>
 	</svelte:fragment>
 </Modal>
 

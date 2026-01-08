@@ -6,13 +6,16 @@
 	import { Toast } from '$lib/components/ui';
 	import { OnboardingModal } from '$lib/components/onboarding';
 	import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
-	import { sidebarOpen, nodeStatus } from '$lib/stores';
+	import { sidebarOpen, nodeStatus, isConnected, isLoading } from '$lib/stores';
+	import { holosphere, nodeApi } from '$lib/api/client';
 
 	let showOnboarding = false;
 	let mounted = false;
+	let initError: string | null = null;
 
-	onMount(() => {
+	onMount(async () => {
 		mounted = true;
+		isLoading.set(true);
 
 		// Check if user has completed onboarding
 		if (browser) {
@@ -22,21 +25,37 @@
 			}
 		}
 
-		// Mock node status for development
-		nodeStatus.set({
-			nodeId: 'node_abc12345',
-			isRunning: true,
-			publicKey: 'npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
-			connectedRelays: 3,
-			knownNodes: 7,
-			subsystems: {
-				cds: true,
-				oad: true,
-				itc: true,
-				cos: true,
-				frs: true
-			}
-		});
+		// Initialize HoloSphere backend
+		try {
+			await holosphere.init();
+			isConnected.set(true);
+
+			// Get actual node status from HoloSphere
+			const status = await nodeApi.getStatus();
+			nodeStatus.set(status);
+		} catch (error) {
+			console.error('Failed to initialize HoloSphere:', error);
+			initError = error instanceof Error ? error.message : 'Unknown error';
+			isConnected.set(false);
+
+			// Set fallback status
+			nodeStatus.set({
+				nodeId: 'node_offline',
+				isRunning: false,
+				publicKey: null,
+				connectedRelays: 0,
+				knownNodes: 0,
+				subsystems: {
+					cds: false,
+					oad: false,
+					itc: false,
+					cos: false,
+					frs: false
+				}
+			});
+		} finally {
+			isLoading.set(false);
+		}
 	});
 
 	function handleOnboardingComplete() {

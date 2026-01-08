@@ -1,7 +1,10 @@
 /**
  * INTEGRAL API Client
+ *
+ * Uses HoloSphere as the backend for local-first data storage and Nostr federation
  */
 
+import { getHoloSphereService } from '$lib/holosphere';
 import type {
 	NodeStatus,
 	DashboardStats,
@@ -26,47 +29,17 @@ import type {
 	ActivityFeed
 } from '$lib/types';
 
-const API_BASE = '/api';
-
-class APIError extends Error {
-	constructor(public status: number, message: string) {
-		super(message);
-		this.name = 'APIError';
-	}
-}
-
-async function request<T>(
-	endpoint: string,
-	options: RequestInit = {}
-): Promise<T> {
-	const url = `${API_BASE}${endpoint}`;
-
-	const response = await fetch(url, {
-		headers: {
-			'Content-Type': 'application/json',
-			...options.headers
-		},
-		...options
-	});
-
-	if (!response.ok) {
-		const error = await response.text();
-		throw new APIError(response.status, error || response.statusText);
-	}
-
-	return response.json();
-}
+// Get the singleton holosphere service
+const hs = getHoloSphereService();
 
 // ============================================================================
 // NODE API
 // ============================================================================
 
 export const nodeApi = {
-	getStatus: () => request<NodeStatus>('/node/status'),
-
-	start: () => request<{ success: boolean }>('/node/start', { method: 'POST' }),
-
-	stop: () => request<{ success: boolean }>('/node/stop', { method: 'POST' })
+	getStatus: (): Promise<NodeStatus> => hs.getNodeStatus(),
+	start: (): Promise<{ success: boolean }> => hs.startNode(),
+	stop: (): Promise<{ success: boolean }> => hs.stopNode()
 };
 
 // ============================================================================
@@ -74,19 +47,18 @@ export const nodeApi = {
 // ============================================================================
 
 export const dashboardApi = {
-	getStats: () => request<DashboardStats>('/dashboard/stats'),
+	getStats: (): Promise<DashboardStats> => hs.getDashboardStats(),
 
-	getActivityFeed: (limit = 20) =>
-		request<ActivityFeed[]>(`/dashboard/activity?limit=${limit}`),
+	getActivityFeed: (limit = 20): Promise<ActivityFeed[]> => hs.getActivityFeed(limit),
 
-	getSystemHealth: () => request<{
+	getSystemHealth: (): Promise<{
 		cds: boolean;
 		oad: boolean;
 		itc: boolean;
 		cos: boolean;
 		frs: boolean;
 		overall: 'healthy' | 'warning' | 'critical';
-	}>('/dashboard/health')
+	}> => hs.getSystemHealth()
 };
 
 // ============================================================================
@@ -95,57 +67,44 @@ export const dashboardApi = {
 
 export const cdsApi = {
 	// Issues
-	listIssues: (status?: string) => {
-		const params = status ? `?status=${status}` : '';
-		return request<Issue[]>(`/cds/issues${params}`);
-	},
+	listIssues: (status?: string): Promise<Issue[]> => hs.listIssues(status),
 
-	getIssue: (id: string) => request<Issue>(`/cds/issues/${id}`),
+	getIssue: (id: string): Promise<Issue | null> => hs.getIssue(id),
 
-	createIssue: (data: { title: string; description: string; authorId: string }) =>
-		request<Issue>('/cds/issues', {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	createIssue: (data: { title: string; description: string; authorId: string }): Promise<Issue> =>
+		hs.createIssue(data),
 
 	// Submissions
-	addSubmission: (issueId: string, data: { type: string; content: string; authorId: string }) =>
-		request<Submission>(`/cds/issues/${issueId}/submissions`, {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	addSubmission: (
+		issueId: string,
+		data: { type: string; content: string; authorId: string }
+	): Promise<Submission> => hs.addSubmission(issueId, data),
 
 	// Scenarios
-	listScenarios: (issueId: string) =>
-		request<Scenario[]>(`/cds/issues/${issueId}/scenarios`),
+	listScenarios: (issueId: string): Promise<Scenario[]> => hs.listScenarios(issueId),
 
-	createScenario: (issueId: string, data: { label: string; parameters: Record<string, unknown> }) =>
-		request<Scenario>(`/cds/issues/${issueId}/scenarios`, {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	createScenario: (
+		issueId: string,
+		data: { label: string; parameters: Record<string, unknown> }
+	): Promise<Scenario> => hs.createScenario(issueId, data),
 
 	// Voting
-	castVote: (scenarioId: string, data: { participantId: string; supportLevel: string }) =>
-		request<{ success: boolean }>(`/cds/scenarios/${scenarioId}/vote`, {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	castVote: (
+		scenarioId: string,
+		data: { participantId: string; supportLevel: string }
+	): Promise<{ success: boolean }> => hs.castVote(scenarioId, data),
 
 	// Consensus
-	evaluateConsensus: (scenarioId: string) =>
-		request<{ consensusScore: number; objectionIndex: number; directive: string }>(
-			`/cds/scenarios/${scenarioId}/evaluate`
-		),
+	evaluateConsensus: (
+		scenarioId: string
+	): Promise<{ consensusScore: number; objectionIndex: number; directive: string }> =>
+		hs.evaluateConsensus(scenarioId),
 
 	// Decisions
-	listDecisions: () => request<Decision[]>('/cds/decisions'),
+	listDecisions: (): Promise<Decision[]> => hs.listDecisions(),
 
-	makeDecision: (issueId: string, scenarioId: string) =>
-		request<Decision>('/cds/decisions', {
-			method: 'POST',
-			body: JSON.stringify({ issueId, scenarioId })
-		})
+	makeDecision: (issueId: string, scenarioId: string): Promise<Decision> =>
+		hs.makeDecision(issueId, scenarioId)
 };
 
 // ============================================================================
@@ -154,46 +113,36 @@ export const cdsApi = {
 
 export const oadApi = {
 	// Specs
-	listSpecs: () => request<DesignSpec[]>('/oad/specs'),
+	listSpecs: (): Promise<DesignSpec[]> => hs.listSpecs(),
 
-	createSpec: (data: { purpose: string; functionalRequirements: string[] }) =>
-		request<DesignSpec>('/oad/specs', {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	createSpec: (data: { purpose: string; functionalRequirements: string[] }): Promise<DesignSpec> =>
+		hs.createSpec(data),
 
 	// Versions
-	listVersions: (specId?: string) => {
-		const params = specId ? `?specId=${specId}` : '';
-		return request<DesignVersion[]>(`/oad/versions${params}`);
-	},
+	listVersions: (specId?: string): Promise<DesignVersion[]> => hs.listVersions(specId),
 
-	getVersion: (id: string) => request<DesignVersion>(`/oad/versions/${id}`),
+	getVersion: (id: string): Promise<DesignVersion | null> => hs.getVersion(id),
 
-	createVersion: (data: { specId: string; label: string; authors: string[]; parameters: Record<string, unknown> }) =>
-		request<DesignVersion>('/oad/versions', {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	createVersion: (data: {
+		specId: string;
+		label: string;
+		authors: string[];
+		parameters: Record<string, unknown>;
+	}): Promise<DesignVersion> => hs.createVersion(data),
 
 	// Eco Assessment
-	getEcoAssessment: (versionId: string) =>
-		request<EcoAssessment>(`/oad/versions/${versionId}/eco`),
+	getEcoAssessment: (versionId: string): Promise<EcoAssessment | null> =>
+		hs.getEcoAssessment(versionId),
 
-	computeEcoAssessment: (versionId: string) =>
-		request<EcoAssessment>(`/oad/versions/${versionId}/eco/compute`, {
-			method: 'POST'
-		}),
+	computeEcoAssessment: (versionId: string): Promise<EcoAssessment> =>
+		hs.computeEcoAssessment(versionId),
 
 	// Certification
-	getCertification: (versionId: string) =>
-		request<CertificationRecord>(`/oad/versions/${versionId}/certification`),
+	getCertification: (versionId: string): Promise<CertificationRecord | null> =>
+		hs.getCertification(versionId),
 
-	requestCertification: (versionId: string, certifiers: string[]) =>
-		request<CertificationRecord>(`/oad/versions/${versionId}/certification`, {
-			method: 'POST',
-			body: JSON.stringify({ certifiers })
-		})
+	requestCertification: (versionId: string, certifiers: string[]): Promise<CertificationRecord> =>
+		hs.requestCertification(versionId, certifiers)
 };
 
 // ============================================================================
@@ -202,16 +151,13 @@ export const oadApi = {
 
 export const itcApi = {
 	// Accounts
-	listAccounts: () => request<ITCAccount[]>('/itc/accounts'),
+	listAccounts: (): Promise<ITCAccount[]> => hs.listAccounts(),
 
-	getAccount: (memberId: string) => request<ITCAccount>(`/itc/accounts/${memberId}`),
+	getAccount: (memberId: string): Promise<ITCAccount | null> => hs.getAccount(memberId),
 
 	// Labor Events
-	listLaborEvents: (memberId?: string, limit = 50) => {
-		const params = new URLSearchParams({ limit: limit.toString() });
-		if (memberId) params.set('memberId', memberId);
-		return request<LaborEvent[]>(`/itc/labor?${params}`);
-	},
+	listLaborEvents: (memberId?: string, limit = 50): Promise<LaborEvent[]> =>
+		hs.listLaborEvents(memberId, limit),
 
 	recordLabor: (data: {
 		memberId: string;
@@ -220,40 +166,27 @@ export const itcApi = {
 		startTime: string;
 		endTime: string;
 		skillTier: string;
-	}) =>
-		request<LaborEvent>('/itc/labor', {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	}): Promise<LaborEvent> => hs.recordLabor(data),
 
-	verifyLabor: (eventId: string, verifierId: string) =>
-		request<LaborEvent>(`/itc/labor/${eventId}/verify`, {
-			method: 'POST',
-			body: JSON.stringify({ verifierId })
-		}),
+	verifyLabor: (eventId: string, verifierId: string): Promise<LaborEvent> =>
+		hs.verifyLabor(eventId, verifierId),
 
 	// Access Valuation
-	computeValuation: (itemId: string, versionId: string) =>
-		request<AccessValuation>('/itc/valuations/compute', {
-			method: 'POST',
-			body: JSON.stringify({ itemId, versionId })
-		}),
+	computeValuation: (itemId: string, versionId: string): Promise<AccessValuation> =>
+		hs.computeValuation(itemId, versionId),
 
-	getValuation: (itemId: string) =>
-		request<AccessValuation>(`/itc/valuations/${itemId}`),
+	getValuation: (itemId: string): Promise<AccessValuation | null> => hs.getValuation(itemId),
 
 	// Redemption
-	redeemAccess: (data: { memberId: string; itemId: string; redemptionType: string }) =>
-		request<{ success: boolean; newBalance: number }>('/itc/redeem', {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	redeemAccess: (data: {
+		memberId: string;
+		itemId: string;
+		redemptionType: string;
+	}): Promise<{ success: boolean; newBalance: number }> => hs.redeemAccess(data),
 
 	// Decay
-	applyDecay: (memberId: string) =>
-		request<{ decayAmount: number; newBalance: number }>(`/itc/accounts/${memberId}/decay`, {
-			method: 'POST'
-		})
+	applyDecay: (memberId: string): Promise<{ decayAmount: number; newBalance: number }> =>
+		hs.applyDecay(memberId)
 };
 
 // ============================================================================
@@ -262,51 +195,37 @@ export const itcApi = {
 
 export const cosApi = {
 	// Plans
-	listPlans: () => request<ProductionPlan[]>('/cos/plans'),
+	listPlans: (): Promise<ProductionPlan[]> => hs.listPlans(),
 
-	getPlan: (planId: string) => request<ProductionPlan>(`/cos/plans/${planId}`),
+	getPlan: (planId: string): Promise<ProductionPlan | null> => hs.getPlan(planId),
 
-	createPlan: (data: { versionId: string; batchSize: number }) =>
-		request<ProductionPlan>('/cos/plans', {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	createPlan: (data: { versionId: string; batchSize: number }): Promise<ProductionPlan> =>
+		hs.createPlan(data),
 
 	// Tasks
-	listTasks: (planId: string) =>
-		request<TaskInstance[]>(`/cos/plans/${planId}/tasks`),
+	listTasks: (planId: string): Promise<TaskInstance[]> => hs.listTasks(planId),
 
-	getTask: (taskId: string) =>
-		request<TaskInstance>(`/cos/tasks/${taskId}`),
+	getTask: (taskId: string): Promise<TaskInstance | null> => hs.getTask(taskId),
 
-	assignTask: (taskId: string, data: { coopId: string; participantIds: string[] }) =>
-		request<TaskInstance>(`/cos/tasks/${taskId}/assign`, {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	assignTask: (
+		taskId: string,
+		data: { coopId: string; participantIds: string[] }
+	): Promise<TaskInstance> => hs.assignTask(taskId, data),
 
-	startTask: (taskId: string) =>
-		request<TaskInstance>(`/cos/tasks/${taskId}/start`, { method: 'POST' }),
+	startTask: (taskId: string): Promise<TaskInstance> => hs.startTask(taskId),
 
-	completeTask: (taskId: string, actualHours: number) =>
-		request<TaskInstance>(`/cos/tasks/${taskId}/complete`, {
-			method: 'POST',
-			body: JSON.stringify({ actualHours })
-		}),
+	completeTask: (taskId: string, actualHours: number): Promise<TaskInstance> =>
+		hs.completeTask(taskId, actualHours),
 
-	blockTask: (taskId: string, reason: string) =>
-		request<TaskInstance>(`/cos/tasks/${taskId}/block`, {
-			method: 'POST',
-			body: JSON.stringify({ reason })
-		}),
+	blockTask: (taskId: string, reason: string): Promise<TaskInstance> =>
+		hs.blockTask(taskId, reason),
 
 	// Constraints
-	detectBottlenecks: (planId: string) =>
-		request<COSConstraint[]>(`/cos/plans/${planId}/bottlenecks`),
+	detectBottlenecks: (planId: string): Promise<COSConstraint[]> => hs.detectBottlenecks(planId),
 
 	// Materials
-	getMaterialInventory: (planId: string) =>
-		request<Record<string, number>>(`/cos/plans/${planId}/materials`)
+	getMaterialInventory: (planId: string): Promise<Record<string, number>> =>
+		hs.getMaterialInventory(planId)
 };
 
 // ============================================================================
@@ -315,44 +234,29 @@ export const cosApi = {
 
 export const frsApi = {
 	// Signals
-	createSignalPacket: () =>
-		request<{ packetId: string; signalCount: number }>('/frs/signals/packet', {
-			method: 'POST'
-		}),
+	createSignalPacket: (): Promise<{ packetId: string; signalCount: number }> =>
+		hs.createSignalPacket(),
 
 	// Findings
-	listFindings: (severity?: string) => {
-		const params = severity ? `?severity=${severity}` : '';
-		return request<DiagnosticFinding[]>(`/frs/findings${params}`);
-	},
+	listFindings: (severity?: string): Promise<DiagnosticFinding[]> => hs.listFindings(severity),
 
-	analyzePacket: (packetId: string) =>
-		request<DiagnosticFinding[]>(`/frs/findings/analyze`, {
-			method: 'POST',
-			body: JSON.stringify({ packetId })
-		}),
+	analyzePacket: (packetId: string): Promise<DiagnosticFinding[]> => hs.analyzePacket(packetId),
 
 	// Recommendations
-	listRecommendations: (targetSystem?: string) => {
-		const params = targetSystem ? `?target=${targetSystem}` : '';
-		return request<Recommendation[]>(`/frs/recommendations${params}`);
-	},
+	listRecommendations: (targetSystem?: string): Promise<Recommendation[]> =>
+		hs.listRecommendations(targetSystem),
 
-	generateRecommendations: (findingIds: string[]) =>
-		request<Recommendation[]>('/frs/recommendations/generate', {
-			method: 'POST',
-			body: JSON.stringify({ findingIds })
-		}),
+	generateRecommendations: (findingIds: string[]): Promise<Recommendation[]> =>
+		hs.generateRecommendations(findingIds),
 
 	// Dashboard
-	getDashboard: () =>
-		request<{
-			totalSignals: number;
-			findingsByType: Record<string, number>;
-			activeRecommendations: number;
-			systemHealth: 'healthy' | 'warning' | 'critical';
-			topIssues: string[];
-		}>('/frs/dashboard')
+	getDashboard: (): Promise<{
+		totalSignals: number;
+		findingsByType: Record<string, number>;
+		activeRecommendations: number;
+		systemHealth: 'healthy' | 'warning' | 'critical';
+		topIssues: string[];
+	}> => hs.getFRSDashboard()
 };
 
 // ============================================================================
@@ -361,39 +265,55 @@ export const frsApi = {
 
 export const federationApi = {
 	// Nodes
-	listNodes: () => request<FederatedNode[]>('/federation/nodes'),
+	listNodes: (): Promise<FederatedNode[]> => hs.listFederatedNodes(),
 
-	queryNode: (nodeId: string) =>
-		request<FederatedNode>(`/federation/nodes/${nodeId}`),
+	queryNode: (nodeId: string): Promise<FederatedNode | null> => hs.queryNode(nodeId),
 
 	// Messages
-	listMessages: (limit = 20) =>
-		request<FederatedMessage[]>(`/federation/messages?limit=${limit}`),
+	listMessages: (limit = 20): Promise<FederatedMessage[]> => hs.listFederationMessages(limit),
 
 	sendMessage: (data: {
 		messageType: string;
 		toScope: string;
 		payload: Record<string, unknown>;
 		summary: string;
-	}) =>
-		request<FederatedMessage>('/federation/messages', {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	}): Promise<FederatedMessage> => hs.sendFederationMessage(data),
 
 	// Best Practices
-	shareBestPractice: (data: { title: string; description: string; benefits: Record<string, number> }) =>
-		request<FederatedMessage>('/federation/best-practices', {
-			method: 'POST',
-			body: JSON.stringify(data)
-		}),
+	shareBestPractice: (data: {
+		title: string;
+		description: string;
+		benefits: Record<string, number>;
+	}): Promise<FederatedMessage> => hs.shareBestPractice(data),
 
 	// Warnings
-	issueWarning: (data: { findingId: string; severity: string; description: string }) =>
-		request<FederatedMessage>('/federation/warnings', {
-			method: 'POST',
-			body: JSON.stringify(data)
-		})
+	issueWarning: (data: {
+		findingId: string;
+		severity: string;
+		description: string;
+	}): Promise<FederatedMessage> => hs.issueWarning(data)
+};
+
+// ============================================================================
+// SUBSCRIPTION HELPERS
+// ============================================================================
+
+export const subscriptions = {
+	subscribeToIssues: (callback: (issues: Issue[]) => void) => hs.subscribeToIssues(callback),
+	subscribeToAccounts: (callback: (accounts: ITCAccount[]) => void) =>
+		hs.subscribeToAccounts(callback),
+	subscribeToActivity: (callback: (activities: ActivityFeed[]) => void) =>
+		hs.subscribeToActivity(callback)
+};
+
+// ============================================================================
+// HOLOSPHERE ACCESS
+// ============================================================================
+
+export const holosphere = {
+	getService: () => hs,
+	init: () => hs.init(),
+	isInitialized: () => hs.isInitialized()
 };
 
 // ============================================================================
@@ -408,7 +328,9 @@ export const api = {
 	itc: itcApi,
 	cos: cosApi,
 	frs: frsApi,
-	federation: federationApi
+	federation: federationApi,
+	subscriptions,
+	holosphere
 };
 
 export default api;

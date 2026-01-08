@@ -31,6 +31,7 @@
     "@nostr-dev-kit/ndk": "^2.5.0",
     "chart.js": "^4.4.1",
     "date-fns": "^3.3.1",
+    "holosphere": "^2.0.0-alpha10",
     "lucide-svelte": "^0.312.0",
     "svelte-chartjs": "^3.1.5"
   }

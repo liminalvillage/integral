@@ -476,9 +476,9 @@
 		</div>
 	{/if}
 	<svelte:fragment slot="footer">
-		<Button variant="ghost" on:click={() => { showReviewModal = false; handleDismissRecommendation(selectedRecommendation!); }}>Dismiss</Button>
-		<Button variant="secondary" on:click={() => { showReviewModal = false; handleOpenModify(selectedRecommendation!); }}>Modify</Button>
-		<Button variant="primary" on:click={() => { showReviewModal = false; handleAcceptAndRoute(selectedRecommendation!); }}>Accept & Route</Button>
+		<Button variant="ghost" on:click={() => { showReviewModal = false; if (selectedRecommendation) handleDismissRecommendation(selectedRecommendation); }}>Dismiss</Button>
+		<Button variant="secondary" on:click={() => { showReviewModal = false; if (selectedRecommendation) handleOpenModify(selectedRecommendation); }}>Modify</Button>
+		<Button variant="primary" on:click={() => { showReviewModal = false; if (selectedRecommendation) handleAcceptAndRoute(selectedRecommendation); }}>Accept & Route</Button>
 	</svelte:fragment>
 </Modal>
 
