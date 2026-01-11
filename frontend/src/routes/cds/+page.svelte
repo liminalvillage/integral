@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, EmptyState, ProgressBar } from '$lib/components/ui';
 	import { issues, selectedIssue } from '$lib/stores';
@@ -18,7 +19,8 @@
 		ThumbsUp,
 		ThumbsDown,
 		Minus,
-		FileText
+		FileText,
+		Eye
 	} from 'lucide-svelte';
 
 	let activeTab = 'all';
@@ -154,6 +156,11 @@
 		}
 	}
 
+	function viewIssue(issue: Issue) {
+		selectedIssue.set(issue);
+		goto(`/cds/${issue.id}`);
+	}
+
 	async function handleVote(issue: Issue, supportLevel: 'support' | 'neutral' | 'concern') {
 		votingIssueId = issue.id;
 		votingLevel = supportLevel;
@@ -247,7 +254,7 @@
 			</EmptyState>
 		{:else}
 			{#each filteredIssues as issue}
-				<Card variant="hover" class="group">
+				<Card variant="hover" class="group cursor-pointer" on:click={() => viewIssue(issue)}>
 					<div class="flex items-start justify-between">
 						<div class="flex-1 min-w-0">
 							<div class="flex items-center gap-3 mb-2">

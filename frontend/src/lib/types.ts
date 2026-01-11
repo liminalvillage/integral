@@ -60,14 +60,17 @@ export interface Submission {
 	type: 'proposal' | 'objection' | 'evidence' | 'comment' | 'signal';
 	content: string;
 	createdAt: string;
+	metadata?: Record<string, unknown>;
 }
 
 export interface Vote {
+	id?: string;
 	participantId: string;
 	scenarioId: string;
 	supportLevel: SupportLevel;
 	weight: number;
-	createdAt: string;
+	rationale?: string;
+	createdAt?: string;
 }
 
 export interface Scenario {
@@ -75,6 +78,7 @@ export interface Scenario {
 	issueId: string;
 	label: string;
 	parameters: Record<string, unknown>;
+	indicators?: Record<string, unknown>;
 	consensusScore?: number;
 	objectionIndex?: number;
 }

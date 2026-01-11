@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, EmptyState, ProgressBar } from '$lib/components/ui';
-	import { designVersions } from '$lib/stores';
+	import { designVersions, selectedDesign } from '$lib/stores';
 	import { oadApi } from '$lib/api/client';
 	import { toasts } from '$lib/stores/toast';
 	import type { DesignVersion, EcoAssessment, CertificationRecord } from '$lib/types';
@@ -20,6 +21,11 @@
 		Zap,
 		Award
 	} from 'lucide-svelte';
+
+	function viewDesign(design: DesignVersion) {
+		selectedDesign.set(design);
+		goto(`/oad/${design.id}`);
+	}
 
 	let activeTab = 'all';
 	let showCreateModal = false;
@@ -263,7 +269,7 @@
 			</div>
 		{:else}
 			{#each filteredDesigns as design}
-				<Card variant="hover" class="group flex flex-col">
+				<Card variant="hover" class="group flex flex-col cursor-pointer" on:click={() => viewDesign(design)}>
 					<div class="flex items-start justify-between mb-3">
 						<Badge variant={statusColors[design.status] ?? 'info'}>
 							{design.status === 'under_review' ? 'Under Review' : design.status.charAt(0).toUpperCase() + design.status.slice(1)}
