@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, StatCard, ProgressBar, EmptyState } from '$lib/components/ui';
 	import { productionPlans } from '$lib/stores';
@@ -268,7 +269,7 @@
 				</EmptyState>
 			{:else}
 				{#each $productionPlans as plan}
-					<Card variant="hover" class="group">
+					<Card variant="hover" class="group cursor-pointer" on:click={() => goto(`/cos/${plan.planId}`)}>
 						<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
 							<div class="flex items-center gap-4">
 								<div class="p-3 rounded-xl bg-primary-500/10">
@@ -276,7 +277,7 @@
 								</div>
 								<div>
 									<div class="flex items-center gap-2 mb-1">
-										<h3 class="text-lg font-medium text-surface-100">Batch #{plan.batchId.split('_')[1]}</h3>
+										<h3 class="text-lg font-medium text-surface-100 group-hover:text-primary-400 transition-colors">Batch #{plan.batchId.split('_')[1]}</h3>
 										{#if plan.completedTasks === plan.taskCount}
 											<Badge variant="success">Complete</Badge>
 										{:else if plan.completedTasks > 0}

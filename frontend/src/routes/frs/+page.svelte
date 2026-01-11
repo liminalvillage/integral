@@ -299,7 +299,10 @@
 				</div>
 				<div class="space-y-3">
 					{#each $findings.slice(0, 4) as finding}
-						<div class="p-3 rounded-lg bg-surface-800/50 border-l-2 {finding.severity === 'critical' ? 'border-red-500' : finding.severity === 'moderate' ? 'border-warning-500' : 'border-primary-500'}">
+						<button
+							class="w-full p-3 rounded-lg bg-surface-800/50 border-l-2 {finding.severity === 'critical' ? 'border-red-500' : finding.severity === 'moderate' ? 'border-warning-500' : 'border-primary-500'} hover:bg-surface-800 transition-colors text-left"
+							on:click={() => goto(`/frs/${finding.id}`)}
+						>
 							<div class="flex items-start gap-3">
 								<svelte:component
 									this={findingTypeIcons[finding.findingType] ?? Activity}
@@ -318,7 +321,7 @@
 									</div>
 								</div>
 							</div>
-						</div>
+						</button>
 					{/each}
 				</div>
 			</Card>
@@ -385,7 +388,10 @@
 			<h3 class="section-header">All Diagnostic Findings</h3>
 			<div class="space-y-4">
 				{#each $findings as finding}
-					<div class="p-4 rounded-lg bg-surface-800/50 border-l-4 {finding.severity === 'critical' ? 'border-red-500' : finding.severity === 'moderate' ? 'border-warning-500' : finding.severity === 'low' ? 'border-primary-500' : 'border-surface-600'}">
+					<button
+						class="w-full p-4 rounded-lg bg-surface-800/50 border-l-4 {finding.severity === 'critical' ? 'border-red-500' : finding.severity === 'moderate' ? 'border-warning-500' : finding.severity === 'low' ? 'border-primary-500' : 'border-surface-600'} hover:bg-surface-800 transition-colors text-left"
+						on:click={() => goto(`/frs/${finding.id}`)}
+					>
 						<div class="flex items-start justify-between mb-2">
 							<div class="flex items-center gap-2">
 								<Badge variant={severityColors[finding.severity]}>{finding.severity}</Badge>
@@ -402,7 +408,7 @@
 								</span>
 							{/each}
 						</div>
-					</div>
+					</button>
 				{/each}
 			</div>
 		</Card>

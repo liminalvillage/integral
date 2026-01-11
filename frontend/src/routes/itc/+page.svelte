@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, StatCard, ProgressBar, EmptyState } from '$lib/components/ui';
 	import { itcAccounts, currentAccount } from '$lib/stores';
@@ -252,7 +253,10 @@
 				<h3 class="section-header">Recent Labor Events</h3>
 				<div class="space-y-3">
 					{#each recentLabor as labor}
-						<div class="flex items-center justify-between p-3 rounded-lg bg-surface-800/50">
+						<button
+							class="w-full flex items-center justify-between p-3 rounded-lg bg-surface-800/50 hover:bg-surface-800 transition-colors text-left"
+							on:click={() => goto(`/itc/${labor.id}`)}
+						>
 							<div class="flex items-center gap-3">
 								<div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white font-medium">
 									{labor.memberId.charAt(0)}
@@ -275,7 +279,7 @@
 									{/if}
 								</div>
 							</div>
-						</div>
+						</button>
 					{/each}
 				</div>
 				<Button variant="ghost" class="w-full mt-4" on:click={handleViewAllEvents}>
@@ -334,7 +338,7 @@
 					</thead>
 					<tbody>
 						{#each recentLabor as labor}
-							<tr class="table-row">
+							<tr class="table-row cursor-pointer hover:bg-surface-800/50" on:click={() => goto(`/itc/${labor.id}`)}>
 								<td class="table-cell font-medium text-surface-200">{labor.memberId}</td>
 								<td class="table-cell text-surface-300">{labor.taskLabel}</td>
 								<td class="table-cell text-primary-400 font-medium">{labor.hours}h</td>
