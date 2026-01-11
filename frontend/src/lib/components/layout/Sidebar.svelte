@@ -15,7 +15,8 @@
 		ChevronRight,
 		Hexagon,
 		BookOpen,
-		HelpCircle
+		FlaskConical,
+		Route
 	} from 'lucide-svelte';
 
 	const navItems = [
@@ -26,7 +27,9 @@
 		{ href: '/cos', icon: Factory, label: 'Production (COS)', section: 'cos' },
 		{ href: '/frs', icon: Activity, label: 'Feedback (FRS)', section: 'frs' },
 		{ href: '/federation', icon: Globe, label: 'Federation', section: 'federation' },
-		{ href: '/docs', icon: BookOpen, label: 'Documentation', section: 'docs' }
+		{ href: '/docs', icon: BookOpen, label: 'Documentation', section: 'docs' },
+		{ href: '/journey', icon: Route, label: 'User Journey', section: 'journey' },
+		{ href: '/playground', icon: FlaskConical, label: 'Playground', section: 'playground' }
 	];
 
 	$: currentPath = $page.url.pathname;

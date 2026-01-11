@@ -30,7 +30,7 @@
 </script>
 
 {#if visible}
-  <div class="rounded-xl border p-4 {colors[type]}" role="alert">
+  <div class="rounded-xl border p-4 {colors[type]} {$$props.class || ''}" role="alert">
     <div class="flex gap-3">
       <svelte:component this={icons[type]} class="w-5 h-5 flex-shrink-0 mt-0.5 {iconColors[type]}" />
       <div class="flex-1">
