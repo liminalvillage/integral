@@ -83,7 +83,7 @@ class IntegralHoloSphereService {
 			backgroundSync: true
 		});
 
-		await this.hs.init();
+		await this.hs.ready();
 		this.initialized = true;
 
 		// Initialize node status
