@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, StatCard, EmptyState, StatusIndicator, Modal, Input } from '$lib/components/ui';
-	import { federatedNodes, nodeStatus } from '$lib/stores';
+	import { federatedNodes, federatedMessages, nodeStatus } from '$lib/stores';
 	import { federationApi } from '$lib/api/client';
 	import { toasts } from '$lib/stores/toast';
+	import { refreshMessages } from '$lib/services/dataLoader';
 	import type { FederatedNode, FederatedMessage } from '$lib/types';
 	import {
 		Globe,
@@ -22,7 +22,9 @@
 	} from 'lucide-svelte';
 
 	let activeTab = 'nodes';
-	let messages: FederatedMessage[] = [];
+
+	// Use messages from store
+	$: messages = $federatedMessages;
 
 	// Node actions state
 	let selectedNode: FederatedNode | null = null;
@@ -83,63 +85,6 @@
 		model_template: Share2
 	};
 
-	// Mock data
-	onMount(() => {
-		federatedNodes.set([
-			{
-				nodeId: 'riverside-coop',
-				publicKey: 'npub1abc...xyz',
-				lastSeen: new Date(Date.now() - 60000).toISOString(),
-				capabilities: ['CDS', 'OAD', 'ITC', 'COS', 'FRS']
-			},
-			{
-				nodeId: 'mountain-collective',
-				publicKey: 'npub1def...uvw',
-				lastSeen: new Date(Date.now() - 300000).toISOString(),
-				capabilities: ['CDS', 'OAD', 'ITC']
-			},
-			{
-				nodeId: 'urban-makers',
-				publicKey: 'npub1ghi...rst',
-				lastSeen: new Date(Date.now() - 1800000).toISOString(),
-				capabilities: ['CDS', 'OAD', 'ITC', 'COS', 'FRS']
-			},
-			{
-				nodeId: 'coastal-workshop',
-				publicKey: 'npub1jkl...opq',
-				lastSeen: new Date(Date.now() - 7200000).toISOString(),
-				capabilities: ['CDS', 'ITC', 'FRS']
-			}
-		]);
-
-		messages = [
-			{
-				id: 'msg_1',
-				messageType: 'best_practice',
-				fromNodeId: 'riverside-coop',
-				toScope: 'federation',
-				summary: 'Effective labor rotation schedule reduces burnout',
-				createdAt: new Date(Date.now() - 3600000).toISOString()
-			},
-			{
-				id: 'msg_2',
-				messageType: 'design_success',
-				fromNodeId: 'mountain-collective',
-				toScope: 'federation',
-				summary: 'Modular greenhouse design achieved 0.22 eco-score',
-				createdAt: new Date(Date.now() - 86400000).toISOString()
-			},
-			{
-				id: 'msg_3',
-				messageType: 'early_warning',
-				fromNodeId: 'urban-makers',
-				toScope: 'regional',
-				summary: 'Supply chain disruption affecting aluminum sourcing',
-				createdAt: new Date(Date.now() - 172800000).toISOString()
-			}
-		];
-	});
-
 	function getNodeStatus(lastSeen: string): 'online' | 'warning' | 'offline' {
 		const diff = Date.now() - new Date(lastSeen).getTime();
 		if (diff < 300000) return 'online'; // 5 minutes
@@ -180,13 +125,13 @@
 
 		isSendingNodeMessage = true;
 		try {
-			const message = await federationApi.sendMessage({
+			await federationApi.sendMessage({
 				messageType: 'model_template',
 				toScope: selectedNode.nodeId,
 				payload: { content: nodeMessageContent },
 				summary: nodeMessageContent.substring(0, 100)
 			});
-			messages = [message, ...messages];
+			await refreshMessages();
 			toasts.success('Message Sent', `Message sent to ${selectedNode.nodeId}`);
 			showMessageNodeModal = false;
 			nodeMessageContent = '';
@@ -205,13 +150,13 @@
 
 		isSendingMessage = true;
 		try {
-			const message = await federationApi.sendMessage({
+			await federationApi.sendMessage({
 				messageType: 'model_template',
 				toScope: messageScope,
 				payload: { content: messageContent },
 				summary: messageContent.substring(0, 100)
 			});
-			messages = [message, ...messages];
+			await refreshMessages();
 			toasts.success('Message Sent', 'Your message has been broadcast');
 			showSendMessageModal = false;
 			messageContent = '';
@@ -230,12 +175,12 @@
 
 		isSharingPractice = true;
 		try {
-			const message = await federationApi.shareBestPractice({
+			await federationApi.shareBestPractice({
 				title: bestPracticeTitle,
 				description: bestPracticeDescription,
 				benefits: {}
 			});
-			messages = [message, ...messages];
+			await refreshMessages();
 			toasts.success('Best Practice Shared', 'Your practice has been shared with the federation');
 			showBestPracticeModal = false;
 			bestPracticeTitle = '';
@@ -255,13 +200,13 @@
 
 		isReportingSuccess = true;
 		try {
-			const message = await federationApi.sendMessage({
+			await federationApi.sendMessage({
 				messageType: 'design_success',
 				toScope: 'federation',
 				payload: { title: designSuccessTitle, ecoScore: designSuccessScore },
 				summary: `${designSuccessTitle} achieved ${designSuccessScore} eco-score`
 			});
-			messages = [message, ...messages];
+			await refreshMessages();
 			toasts.success('Design Success Reported', 'Your design achievement has been shared');
 			showDesignSuccessModal = false;
 			designSuccessTitle = '';
@@ -281,12 +226,12 @@
 
 		isIssuingWarning = true;
 		try {
-			const message = await federationApi.issueWarning({
+			await federationApi.issueWarning({
 				findingId: `finding_${Date.now()}`,
 				severity: warningSeverity,
 				description: warningDescription
 			});
-			messages = [message, ...messages];
+			await refreshMessages();
 			toasts.warning('Warning Issued', 'Early warning has been broadcast to the federation');
 			showWarningModal = false;
 			warningDescription = '';

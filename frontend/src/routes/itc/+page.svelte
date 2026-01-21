@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, StatCard, ProgressBar, EmptyState } from '$lib/components/ui';
-	import { itcAccounts, currentAccount } from '$lib/stores';
+	import { itcAccounts, currentAccount, laborEvents } from '$lib/stores';
 	import { itcApi } from '$lib/api/client';
 	import { toasts } from '$lib/stores/toast';
+	import { refreshLaborEvents } from '$lib/services/dataLoader';
 	import type { ITCAccount, LaborEvent } from '$lib/types';
 	import {
 		Clock,
@@ -23,7 +23,14 @@
 
 	let activeTab = 'overview';
 	let showRecordModal = false;
-	let recentLabor: LaborEvent[] = [];
+
+	// Use laborEvents store for labor events
+	$: recentLabor = $laborEvents;
+
+	// Set first account as current if available and not set
+	$: if ($itcAccounts.length > 0 && !$currentAccount) {
+		currentAccount.set($itcAccounts[0]);
+	}
 
 	// Labor recording form state
 	let laborTaskDescription = '';
@@ -58,62 +65,6 @@
 		return skillTierColors[tier] || 'info';
 	}
 
-	// Mock data
-	onMount(() => {
-		currentAccount.set({
-			id: 'acc_1',
-			memberId: 'member_current',
-			balance: 127.5,
-			totalEarned: 342.0,
-			totalRedeemed: 186.5,
-			totalDecayed: 28.0,
-			lastDecayAppliedAt: new Date(Date.now() - 86400000 * 7).toISOString()
-		});
-
-		itcAccounts.set([
-			{ id: 'acc_1', memberId: 'Alice', balance: 127.5, totalEarned: 342.0, totalRedeemed: 186.5, totalDecayed: 28.0, lastDecayAppliedAt: '' },
-			{ id: 'acc_2', memberId: 'Bob', balance: 89.2, totalEarned: 215.0, totalRedeemed: 110.3, totalDecayed: 15.5, lastDecayAppliedAt: '' },
-			{ id: 'acc_3', memberId: 'Carol', balance: 156.8, totalEarned: 423.0, totalRedeemed: 245.2, totalDecayed: 21.0, lastDecayAppliedAt: '' },
-			{ id: 'acc_4', memberId: 'Dave', balance: 45.3, totalEarned: 128.0, totalRedeemed: 75.7, totalDecayed: 7.0, lastDecayAppliedAt: '' }
-		]);
-
-		recentLabor = [
-			{
-				id: 'labor_1',
-				memberId: 'Alice',
-				taskId: 'task_1',
-				taskLabel: 'Solar panel assembly',
-				hours: 4.5,
-				skillTier: 'high',
-				startTime: new Date(Date.now() - 3600000 * 6).toISOString(),
-				endTime: new Date(Date.now() - 3600000 * 1.5).toISOString(),
-				verified: true
-			},
-			{
-				id: 'labor_2',
-				memberId: 'Bob',
-				taskId: 'task_2',
-				taskLabel: 'Workshop maintenance',
-				hours: 2.0,
-				skillTier: 'medium',
-				startTime: new Date(Date.now() - 86400000).toISOString(),
-				endTime: new Date(Date.now() - 86400000 + 7200000).toISOString(),
-				verified: true
-			},
-			{
-				id: 'labor_3',
-				memberId: 'Carol',
-				taskId: 'task_3',
-				taskLabel: 'Documentation writing',
-				hours: 3.0,
-				skillTier: 'medium',
-				startTime: new Date(Date.now() - 86400000 * 2).toISOString(),
-				endTime: new Date(Date.now() - 86400000 * 2 + 10800000).toISOString(),
-				verified: false
-			}
-		];
-	});
-
 	$: totalCirculating = $itcAccounts.reduce((sum, acc) => sum + acc.balance, 0);
 
 	function formatDate(dateString: string): string {
@@ -145,8 +96,9 @@
 				endTime: laborEndTime,
 				skillTier: laborSkillTier
 			});
-			recentLabor = [labor, ...recentLabor];
-			toasts.success('Labor Recorded', `${labor.hours}h recorded for "${labor.taskLabel}"`);
+			// Refresh labor events from store
+			await refreshLaborEvents();
+			toasts.success('Labor Recorded', `${labor.hours.toFixed(1)}h recorded for "${labor.taskLabel}"`);
 			showRecordModal = false;
 			// Reset form
 			laborTaskDescription = '';

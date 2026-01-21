@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, EmptyState, ProgressBar } from '$lib/components/ui';
 	import { designVersions } from '$lib/stores';
@@ -44,57 +43,6 @@
 		{ id: 'under_review', label: 'Under Review', count: 0 },
 		{ id: 'certified', label: 'Certified', count: 0 }
 	];
-
-	// Mock data
-	onMount(() => {
-		designVersions.set([
-			{
-				id: 'ver_1',
-				specId: 'spec_1',
-				label: 'Solar Panel Mount v2.3',
-				status: 'certified',
-				authors: ['Alice', 'Bob'],
-				createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-				ecoScore: 0.32
-			},
-			{
-				id: 'ver_2',
-				specId: 'spec_2',
-				label: 'Modular Greenhouse Frame',
-				status: 'under_review',
-				authors: ['Carol', 'Dave', 'Eve'],
-				createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-				ecoScore: 0.45
-			},
-			{
-				id: 'ver_3',
-				specId: 'spec_3',
-				label: 'Rainwater Collection System',
-				status: 'draft',
-				authors: ['Frank'],
-				createdAt: new Date(Date.now() - 3600000 * 8).toISOString(),
-				ecoScore: undefined
-			},
-			{
-				id: 'ver_4',
-				specId: 'spec_4',
-				label: 'Community Tool Library Rack',
-				status: 'certified',
-				authors: ['Grace', 'Henry'],
-				createdAt: new Date(Date.now() - 86400000 * 12).toISOString(),
-				ecoScore: 0.28
-			},
-			{
-				id: 'ver_5',
-				specId: 'spec_5',
-				label: 'Composting Bin Design',
-				status: 'certified',
-				authors: ['Ivy'],
-				createdAt: new Date(Date.now() - 86400000 * 20).toISOString(),
-				ecoScore: 0.18
-			}
-		]);
-	});
 
 	$: filteredDesigns = activeTab === 'all'
 		? $designVersions

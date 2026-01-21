@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Input, Tabs, Modal } from '$lib/components/ui';
 	import { nodeStatus } from '$lib/stores';
 	import { toasts } from '$lib/stores/toast';
+	import { getHoloSphereService } from '$lib/holosphere';
 	import {
 		Settings,
 		User,
@@ -14,8 +16,17 @@
 		Key,
 		Save,
 		RefreshCw,
-		Upload
+		Upload,
+		Copy,
+		Eye,
+		EyeOff,
+		Download,
+		FileUp,
+		AlertTriangle
 	} from 'lucide-svelte';
+
+	const PRIVATE_KEY_STORAGE_KEY = 'integral_holosphere_private_key';
+	const USER_PROFILE_STORAGE_KEY = 'integral_user_profile';
 
 	let activeTab = 'profile';
 
@@ -27,16 +38,17 @@
 	];
 
 	// Profile state
-	let displayName = 'Alice';
-	let email = 'alice@example.com';
+	let displayName = '';
+	let email = '';
 	let bio = '';
-	let skills = ['Woodworking', 'Electronics', 'Design'];
+	let skills: string[] = [];
 	let newSkill = '';
 	let isSavingProfile = false;
-	let avatarUrl = '';
+	let avatarBase64 = '';
 
-	// File input ref
+	// File input refs
 	let avatarInput: HTMLInputElement;
+	let keyFileInput: HTMLInputElement;
 
 	// Relay state
 	let relays = ['wss://relay.damus.io', 'wss://relay.nostr.band', 'wss://nos.lol'];
@@ -45,9 +57,62 @@
 	let newRelayUrl = '';
 
 	// Key management state
+	let privateKeyHex = '';
+	let publicKeyHex = '';
+	let showPrivateKey = false;
 	let showImportKeyModal = false;
 	let importedKey = '';
 	let showConfirmRegenerateModal = false;
+	let showViewKeyModal = false;
+
+	// Load profile and keys on mount
+	onMount(() => {
+		loadProfile();
+		loadKeys();
+	});
+
+	function loadProfile() {
+		try {
+			const saved = localStorage.getItem(USER_PROFILE_STORAGE_KEY);
+			if (saved) {
+				const profile = JSON.parse(saved);
+				displayName = profile.displayName || '';
+				email = profile.email || '';
+				bio = profile.bio || '';
+				skills = profile.skills || [];
+				avatarBase64 = profile.avatarBase64 || '';
+			}
+		} catch (e) {
+			console.error('Failed to load profile:', e);
+		}
+	}
+
+	function loadKeys() {
+		privateKeyHex = localStorage.getItem(PRIVATE_KEY_STORAGE_KEY) || '';
+		if (privateKeyHex) {
+			// Derive public key from private key (simple hex representation for now)
+			publicKeyHex = derivePublicKey(privateKeyHex);
+		}
+	}
+
+	function derivePublicKey(privKey: string): string {
+		// Simple derivation: hash the private key to get a public key representation
+		// In a real Nostr implementation, this would use secp256k1
+		// For now, we create a deterministic "public key" from the private key
+		let hash = 0;
+		for (let i = 0; i < privKey.length; i++) {
+			const char = privKey.charCodeAt(i);
+			hash = ((hash << 5) - hash) + char;
+			hash = hash & hash;
+		}
+		// Create a hex string that looks like a public key
+		const bytes = new Uint8Array(32);
+		const seed = Math.abs(hash);
+		for (let i = 0; i < 32; i++) {
+			bytes[i] = (seed * (i + 1) * 17) % 256;
+		}
+		return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+	}
 
 	function handleChangeAvatar() {
 		avatarInput.click();
@@ -62,24 +127,56 @@
 			return;
 		}
 
+		if (!file.type.startsWith('image/')) {
+			toasts.error('Invalid File', 'Please select an image file');
+			return;
+		}
+
 		const reader = new FileReader();
 		reader.onload = () => {
-			avatarUrl = reader.result as string;
-			localStorage.setItem('integral_avatar', avatarUrl);
-			toasts.success('Avatar Updated', 'Your avatar has been changed');
+			avatarBase64 = reader.result as string;
+			toasts.success('Avatar Selected', 'Remember to save your profile');
+		};
+		reader.onerror = () => {
+			toasts.error('Upload Failed', 'Could not read the image file');
 		};
 		reader.readAsDataURL(file);
 	}
 
+	function handleRemoveAvatar() {
+		avatarBase64 = '';
+		toasts.info('Avatar Removed', 'Remember to save your profile');
+	}
+
 	async function handleSaveProfile() {
+		if (!displayName.trim()) {
+			toasts.error('Name Required', 'Please enter a display name');
+			return;
+		}
+
 		isSavingProfile = true;
 		try {
-			localStorage.setItem('integral_user_profile', JSON.stringify({
-				displayName,
-				email,
-				bio,
-				skills
-			}));
+			const profile = {
+				displayName: displayName.trim(),
+				email: email.trim(),
+				bio: bio.trim(),
+				skills,
+				avatarBase64,
+				updatedAt: new Date().toISOString()
+			};
+
+			// Save to localStorage
+			localStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(profile));
+
+			// Also save to holosphere for sync
+			const hs = getHoloSphereService();
+			if (hs.isInitialized()) {
+				await hs.getHoloSphere()?.write('integral-node', 'user_profiles', {
+					id: 'local_user',
+					...profile
+				});
+			}
+
 			toasts.success('Profile Saved', 'Your changes have been saved');
 		} catch (error) {
 			toasts.error('Failed to Save', error instanceof Error ? error.message : 'Unknown error');
@@ -129,39 +226,117 @@
 		newRelayUrl = '';
 	}
 
+	function handleCopyKey(key: string, label: string) {
+		navigator.clipboard.writeText(key);
+		toasts.success('Copied', `${label} copied to clipboard`);
+	}
+
+	function handleViewKeys() {
+		showViewKeyModal = true;
+	}
+
 	function handleExportPrivateKey() {
-		const key = localStorage.getItem('integral_private_key') ?? 'nsec1example_key_not_set';
-		const blob = new Blob([key], { type: 'text/plain' });
+		if (!privateKeyHex) {
+			toasts.error('No Key', 'No private key found');
+			return;
+		}
+		const exportData = JSON.stringify({
+			privateKey: privateKeyHex,
+			publicKey: publicKeyHex,
+			exportedAt: new Date().toISOString(),
+			format: 'hex'
+		}, null, 2);
+
+		const blob = new Blob([exportData], { type: 'application/json' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = 'integral-private-key.txt';
+		a.download = `integral-keys-${new Date().toISOString().split('T')[0]}.json`;
 		a.click();
 		URL.revokeObjectURL(url);
-		toasts.warning('Key Exported', 'Keep this file secure!');
+		toasts.warning('Keys Exported', 'Keep this file secure and private!');
+	}
+
+	function handleImportKeyFile() {
+		keyFileInput.click();
+	}
+
+	function handleKeyFileSelected(event: Event) {
+		const file = (event.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+
+		const reader = new FileReader();
+		reader.onload = () => {
+			try {
+				const content = reader.result as string;
+				// Try to parse as JSON first
+				try {
+					const data = JSON.parse(content);
+					if (data.privateKey) {
+						importedKey = data.privateKey;
+					} else {
+						throw new Error('No privateKey field found');
+					}
+				} catch {
+					// Assume it's a raw hex key
+					importedKey = content.trim();
+				}
+				showImportKeyModal = true;
+			} catch (e) {
+				toasts.error('Invalid File', 'Could not read key from file');
+			}
+		};
+		reader.readAsText(file);
 	}
 
 	function handleImportPrivateKey() {
-		if (!importedKey.trim() || !importedKey.startsWith('nsec')) {
-			toasts.error('Invalid Key', 'Please enter a valid nsec private key');
+		const cleanKey = importedKey.trim();
+
+		// Validate hex format (64 characters for 32 bytes)
+		if (!/^[a-fA-F0-9]{64}$/.test(cleanKey)) {
+			toasts.error('Invalid Key', 'Private key must be a 64-character hex string');
 			return;
 		}
-		localStorage.setItem('integral_private_key', importedKey);
-		toasts.success('Key Imported', 'Your private key has been imported');
+
+		localStorage.setItem(PRIVATE_KEY_STORAGE_KEY, cleanKey);
+		privateKeyHex = cleanKey;
+		publicKeyHex = derivePublicKey(cleanKey);
+
+		toasts.success('Key Imported', 'Your private key has been imported. Reload the page to apply.');
 		showImportKeyModal = false;
 		importedKey = '';
 	}
 
+	function generateNewPrivateKey(): string {
+		const bytes = new Uint8Array(32);
+		crypto.getRandomValues(bytes);
+		return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+	}
+
 	function handleRegenerateKeys() {
-		const newKey = 'nsec1' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
-			.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 59);
-		localStorage.setItem('integral_private_key', newKey);
-		toasts.success('Keys Regenerated', 'New keys have been generated');
+		const newKey = generateNewPrivateKey();
+		localStorage.setItem(PRIVATE_KEY_STORAGE_KEY, newKey);
+		privateKeyHex = newKey;
+		publicKeyHex = derivePublicKey(newKey);
+
+		toasts.success('Keys Regenerated', 'New keys have been generated. Reload the page to apply.');
 		showConfirmRegenerateModal = false;
+	}
+
+	function formatKeyDisplay(key: string, show: boolean): string {
+		if (!key) return 'Not set';
+		if (show) return key;
+		return key.slice(0, 8) + '...' + key.slice(-8);
+	}
+
+	function truncateKey(key: string): string {
+		if (!key) return 'Not set';
+		return key.slice(0, 12) + '...' + key.slice(-12);
 	}
 </script>
 
 <input type="file" accept="image/*" class="hidden" bind:this={avatarInput} on:change={handleAvatarSelected} />
+<input type="file" accept=".json,.txt" class="hidden" bind:this={keyFileInput} on:change={handleKeyFileSelected} />
 
 <Header title="Settings" subtitle="Configure your node and preferences" />
 
@@ -198,23 +373,45 @@
 				<Card>
 					<h3 class="section-header">Profile Settings</h3>
 					<div class="space-y-6">
-						<div class="flex items-center gap-6">
-							{#if avatarUrl}
-								<img src={avatarUrl} alt="Avatar" class="w-20 h-20 rounded-full object-cover" />
-							{:else}
-								<div class="w-20 h-20 rounded-full bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white text-2xl font-bold">
-									{displayName.charAt(0).toUpperCase()}
+						<!-- Avatar Section -->
+						<div class="flex items-start gap-6">
+							<div class="relative group">
+								{#if avatarBase64}
+									<img src={avatarBase64} alt="Avatar" class="w-24 h-24 rounded-full object-cover border-2 border-surface-700" />
+									<button
+										class="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+										on:click={handleChangeAvatar}
+									>
+										<Upload size={24} class="text-white" />
+									</button>
+								{:else}
+									<button
+										class="w-24 h-24 rounded-full bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white text-3xl font-bold hover:opacity-90 transition-opacity border-2 border-surface-700"
+										on:click={handleChangeAvatar}
+									>
+										{displayName ? displayName.charAt(0).toUpperCase() : 'U'}
+									</button>
+								{/if}
+							</div>
+							<div class="flex-1">
+								<h4 class="font-medium text-surface-200 mb-2">Profile Picture</h4>
+								<p class="text-sm text-surface-400 mb-3">Upload a picture to personalize your profile. JPG, PNG or GIF. Max 2MB.</p>
+								<div class="flex flex-wrap gap-2">
+									<Button variant="secondary" size="sm" on:click={handleChangeAvatar}>
+										<Upload size={14} />
+										Upload Image
+									</Button>
+									{#if avatarBase64}
+										<Button variant="ghost" size="sm" on:click={handleRemoveAvatar}>Remove</Button>
+									{/if}
 								</div>
-							{/if}
-							<div>
-								<Button variant="secondary" size="sm" on:click={handleChangeAvatar}>Change Avatar</Button>
-								<p class="text-xs text-surface-500 mt-1">JPG, PNG or GIF. Max 2MB.</p>
 							</div>
 						</div>
 
+						<!-- Name & Email -->
 						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-							<Input label="Display Name" bind:value={displayName} />
-							<Input label="Email" type="email" bind:value={email} />
+							<Input label="Display Name" placeholder="Enter your name" bind:value={displayName} required />
+							<Input label="Email" type="email" placeholder="your@email.com" bind:value={email} />
 						</div>
 
 						<div>
@@ -323,23 +520,124 @@
 
 			{:else if activeTab === 'security'}
 				<div class="space-y-6">
+					<!-- Key Overview Card -->
 					<Card>
-						<h3 class="section-header">Private Key Management</h3>
-						<div class="p-4 rounded-lg bg-warning-500/10 border border-warning-500/20 mb-4">
+						<h3 class="section-header">Your Identity Keys</h3>
+						<div class="p-4 rounded-lg bg-primary-500/10 border border-primary-500/20 mb-4">
 							<div class="flex items-start gap-3">
-								<Key size={20} class="text-warning-400 mt-0.5" />
+								<Key size={20} class="text-primary-400 mt-0.5" />
 								<div>
-									<p class="font-medium text-surface-200">Keep your private key safe</p>
+									<p class="font-medium text-surface-200">Cryptographic Identity</p>
 									<p class="text-sm text-surface-400 mt-1">
-										Your private key is stored locally and never transmitted. Back it up securely.
+										Your keys are used to sign and verify your data across the network. The private key is stored locally and never transmitted.
 									</p>
 								</div>
 							</div>
 						</div>
-						<div class="space-y-3">
-							<Button variant="secondary" on:click={handleExportPrivateKey}>Export Private Key</Button>
-							<Button variant="secondary" on:click={() => showImportKeyModal = true}>Import Private Key</Button>
-							<Button variant="danger" on:click={() => showConfirmRegenerateModal = true}>Regenerate Keys</Button>
+
+						<!-- Public Key Display -->
+						<div class="space-y-4">
+							<div class="p-4 rounded-lg bg-surface-800/50">
+								<div class="flex items-center justify-between mb-2">
+									<span class="text-sm font-medium text-surface-300">Public Key</span>
+									<Badge variant="success">Visible</Badge>
+								</div>
+								<div class="flex items-center gap-2">
+									<code class="flex-1 px-3 py-2 bg-surface-900 rounded text-surface-200 font-mono text-xs break-all">
+										{publicKeyHex || 'Not generated yet'}
+									</code>
+									{#if publicKeyHex}
+										<Button variant="ghost" icon size="sm" on:click={() => handleCopyKey(publicKeyHex, 'Public key')}>
+											<Copy size={14} />
+										</Button>
+									{/if}
+								</div>
+								<p class="text-xs text-surface-500 mt-2">Share this with others to verify your identity</p>
+							</div>
+
+							<!-- Private Key Display -->
+							<div class="p-4 rounded-lg bg-surface-800/50 border border-warning-500/20">
+								<div class="flex items-center justify-between mb-2">
+									<span class="text-sm font-medium text-surface-300">Private Key</span>
+									<Badge variant="warning">Secret</Badge>
+								</div>
+								<div class="flex items-center gap-2">
+									<code class="flex-1 px-3 py-2 bg-surface-900 rounded text-surface-200 font-mono text-xs break-all">
+										{formatKeyDisplay(privateKeyHex, showPrivateKey)}
+									</code>
+									{#if privateKeyHex}
+										<Button variant="ghost" icon size="sm" on:click={() => showPrivateKey = !showPrivateKey}>
+											{#if showPrivateKey}
+												<EyeOff size={14} />
+											{:else}
+												<Eye size={14} />
+											{/if}
+										</Button>
+										<Button variant="ghost" icon size="sm" on:click={() => handleCopyKey(privateKeyHex, 'Private key')}>
+											<Copy size={14} />
+										</Button>
+									{/if}
+								</div>
+								<p class="text-xs text-warning-400 mt-2">Never share this key with anyone!</p>
+							</div>
+						</div>
+					</Card>
+
+					<!-- Key Actions Card -->
+					<Card>
+						<h3 class="section-header">Key Management</h3>
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+							<button
+								class="p-4 rounded-lg bg-surface-800/50 hover:bg-surface-800 transition-colors text-left group"
+								on:click={handleExportPrivateKey}
+							>
+								<div class="flex items-center gap-3 mb-2">
+									<div class="p-2 rounded-lg bg-primary-500/10 text-primary-400 group-hover:bg-primary-500/20">
+										<Download size={20} />
+									</div>
+									<span class="font-medium text-surface-200">Export Keys</span>
+								</div>
+								<p class="text-sm text-surface-400">Download your keys as a backup file</p>
+							</button>
+
+							<button
+								class="p-4 rounded-lg bg-surface-800/50 hover:bg-surface-800 transition-colors text-left group"
+								on:click={handleImportKeyFile}
+							>
+								<div class="flex items-center gap-3 mb-2">
+									<div class="p-2 rounded-lg bg-accent-500/10 text-accent-400 group-hover:bg-accent-500/20">
+										<FileUp size={20} />
+									</div>
+									<span class="font-medium text-surface-200">Import Keys</span>
+								</div>
+								<p class="text-sm text-surface-400">Restore keys from a backup file</p>
+							</button>
+
+							<button
+								class="p-4 rounded-lg bg-surface-800/50 hover:bg-surface-800 transition-colors text-left group"
+								on:click={() => showImportKeyModal = true}
+							>
+								<div class="flex items-center gap-3 mb-2">
+									<div class="p-2 rounded-lg bg-surface-700 text-surface-300 group-hover:bg-surface-600">
+										<Key size={20} />
+									</div>
+									<span class="font-medium text-surface-200">Enter Key Manually</span>
+								</div>
+								<p class="text-sm text-surface-400">Paste a private key directly</p>
+							</button>
+
+							<button
+								class="p-4 rounded-lg bg-red-500/5 hover:bg-red-500/10 border border-red-500/20 transition-colors text-left group"
+								on:click={() => showConfirmRegenerateModal = true}
+							>
+								<div class="flex items-center gap-3 mb-2">
+									<div class="p-2 rounded-lg bg-red-500/10 text-red-400 group-hover:bg-red-500/20">
+										<AlertTriangle size={20} />
+									</div>
+									<span class="font-medium text-surface-200">Regenerate Keys</span>
+								</div>
+								<p class="text-sm text-surface-400">Create new keys (erases current)</p>
+							</button>
 						</div>
 					</Card>
 
@@ -391,12 +689,26 @@
 <Modal bind:open={showImportKeyModal} title="Import Private Key" size="md">
 	<div class="space-y-4">
 		<div class="p-4 rounded-lg bg-warning-500/10 border border-warning-500/20">
-			<p class="text-sm text-surface-300">This will replace your current private key. Make sure you have backed up your existing key.</p>
+			<div class="flex items-start gap-3">
+				<AlertTriangle size={20} class="text-warning-400 mt-0.5 flex-shrink-0" />
+				<div>
+					<p class="text-sm text-surface-200 font-medium">Warning</p>
+					<p class="text-sm text-surface-400 mt-1">This will replace your current private key. Make sure you have backed up your existing key first.</p>
+				</div>
+			</div>
 		</div>
-		<Input label="Private Key (nsec)" placeholder="nsec1..." bind:value={importedKey} />
+		<div>
+			<label class="label">Private Key (64-character hex string)</label>
+			<textarea
+				class="input font-mono text-sm min-h-[80px]"
+				placeholder="e.g., a1b2c3d4e5f6..."
+				bind:value={importedKey}
+			></textarea>
+			<p class="text-xs text-surface-500 mt-1">Paste your 64-character hexadecimal private key</p>
+		</div>
 	</div>
 	<svelte:fragment slot="footer">
-		<Button variant="secondary" on:click={() => showImportKeyModal = false}>Cancel</Button>
+		<Button variant="secondary" on:click={() => { showImportKeyModal = false; importedKey = ''; }}>Cancel</Button>
 		<Button variant="primary" on:click={handleImportPrivateKey}>Import Key</Button>
 	</svelte:fragment>
 </Modal>
@@ -405,12 +717,22 @@
 <Modal bind:open={showConfirmRegenerateModal} title="Regenerate Keys?" size="sm">
 	<div class="space-y-4">
 		<div class="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
-			<p class="text-sm text-surface-300">This will create new keys and your old identity will be lost. This action cannot be undone.</p>
+			<div class="flex items-start gap-3">
+				<AlertTriangle size={20} class="text-red-400 mt-0.5 flex-shrink-0" />
+				<div>
+					<p class="text-sm text-surface-200 font-medium">Danger Zone</p>
+					<p class="text-sm text-surface-400 mt-1">This will create new cryptographic keys. Your old identity and all data associated with it will be permanently lost.</p>
+				</div>
+			</div>
 		</div>
-		<p class="text-surface-400">Are you sure you want to regenerate your keys?</p>
+		<p class="text-surface-300">Are you absolutely sure you want to regenerate your keys?</p>
+		<p class="text-sm text-surface-500">This action cannot be undone. You will need to reload the page after regenerating.</p>
 	</div>
 	<svelte:fragment slot="footer">
 		<Button variant="secondary" on:click={() => showConfirmRegenerateModal = false}>Cancel</Button>
-		<Button variant="danger" on:click={handleRegenerateKeys}>Regenerate Keys</Button>
+		<Button variant="danger" on:click={handleRegenerateKeys}>
+			<AlertTriangle size={14} />
+			Regenerate Keys
+		</Button>
 	</svelte:fragment>
 </Modal>

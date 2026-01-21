@@ -9,11 +9,27 @@ import type {
 	NodeStatus,
 	DashboardStats,
 	Issue,
+	Submission,
+	Scenario,
+	Vote,
+	Decision,
+	DesignSpec,
 	DesignVersion,
+	EcoAssessment,
+	CertificationRecord,
+	LaborEvent,
 	ITCAccount,
+	AccessValuation,
 	ProductionPlan,
+	TaskInstance,
+	COSConstraint,
+	MaterialInventory,
+	SignalPacket,
 	DiagnosticFinding,
+	Recommendation,
+	MemoryRecord,
 	FederatedNode,
+	FederatedMessage,
 	ActivityFeed
 } from '$lib/types';
 
@@ -73,6 +89,10 @@ export const activityFeed = writable<ActivityFeed[]>([]);
 
 export const issues = writable<Issue[]>([]);
 export const selectedIssue = writable<Issue | null>(null);
+export const submissions = writable<Submission[]>([]);
+export const scenarios = writable<Scenario[]>([]);
+export const votes = writable<Vote[]>([]);
+export const decisions = writable<Decision[]>([]);
 
 export const issuesByStatus = derived(issues, ($issues) => {
 	const grouped: Record<string, Issue[]> = {};
@@ -89,8 +109,11 @@ export const issuesByStatus = derived(issues, ($issues) => {
 // OAD STORES
 // ============================================================================
 
+export const designSpecs = writable<DesignSpec[]>([]);
 export const designVersions = writable<DesignVersion[]>([]);
 export const selectedDesign = writable<DesignVersion | null>(null);
+export const ecoAssessments = writable<EcoAssessment[]>([]);
+export const certifications = writable<CertificationRecord[]>([]);
 
 export const certifiedDesigns = derived(designVersions, ($versions) =>
 	$versions.filter((v) => v.status === 'certified')
@@ -102,6 +125,9 @@ export const certifiedDesigns = derived(designVersions, ($versions) =>
 
 export const itcAccounts = writable<ITCAccount[]>([]);
 export const currentAccount = writable<ITCAccount | null>(null);
+export const laborEvents = writable<LaborEvent[]>([]);
+export const valuations = writable<AccessValuation[]>([]);
+
 export const totalCirculatingITC = derived(itcAccounts, ($accounts) =>
 	$accounts.reduce((sum, acc) => sum + acc.balance, 0)
 );
@@ -112,6 +138,9 @@ export const totalCirculatingITC = derived(itcAccounts, ($accounts) =>
 
 export const productionPlans = writable<ProductionPlan[]>([]);
 export const selectedPlan = writable<ProductionPlan | null>(null);
+export const tasks = writable<TaskInstance[]>([]);
+export const constraints = writable<COSConstraint[]>([]);
+export const materialInventory = writable<MaterialInventory[]>([]);
 
 export const activePlans = derived(productionPlans, ($plans) =>
 	$plans.filter((p) => p.completedTasks < p.taskCount)
@@ -140,11 +169,16 @@ export const criticalFindings = derived(findings, ($findings) =>
 	$findings.filter((f) => f.severity === 'critical')
 );
 
+export const signalPackets = writable<SignalPacket[]>([]);
+export const recommendations = writable<Recommendation[]>([]);
+export const memories = writable<MemoryRecord[]>([]);
+
 // ============================================================================
 // FEDERATION STORES
 // ============================================================================
 
 export const federatedNodes = writable<FederatedNode[]>([]);
+export const federatedMessages = writable<FederatedMessage[]>([]);
 
 export const connectedNodeCount = derived(federatedNodes, ($nodes) => $nodes.length);
 

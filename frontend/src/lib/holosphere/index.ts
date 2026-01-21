@@ -11,6 +11,7 @@ import type {
 	Issue,
 	Submission,
 	Scenario,
+	Vote,
 	Decision,
 	DesignSpec,
 	DesignVersion,
@@ -22,8 +23,11 @@ import type {
 	ProductionPlan,
 	TaskInstance,
 	COSConstraint,
+	MaterialInventory,
+	SignalPacket,
 	DiagnosticFinding,
 	Recommendation,
+	MemoryRecord,
 	FederatedNode,
 	FederatedMessage,
 	ActivityFeed
@@ -53,6 +57,43 @@ const DEFAULT_CONFIG: IntegralHoloSphereConfig = {
 };
 
 // ============================================================================
+// PRIVATE KEY PERSISTENCE
+// ============================================================================
+
+const PRIVATE_KEY_STORAGE_KEY = 'integral_holosphere_private_key';
+
+function getOrCreatePrivateKey(): string {
+	// Check if we're in a browser environment
+	if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+		// Server-side: generate a temporary key (won't persist)
+		return generatePrivateKey();
+	}
+
+	// Try to get existing key from localStorage
+	let privateKey = localStorage.getItem(PRIVATE_KEY_STORAGE_KEY);
+
+	if (!privateKey) {
+		// Generate a new key and persist it
+		privateKey = generatePrivateKey();
+		localStorage.setItem(PRIVATE_KEY_STORAGE_KEY, privateKey);
+		console.log('[HoloSphere] Generated and stored new private key');
+	} else {
+		console.log('[HoloSphere] Using existing private key from storage');
+	}
+
+	return privateKey;
+}
+
+function generatePrivateKey(): string {
+	// Generate a 32-byte hex string for Nostr private key
+	const bytes = new Uint8Array(32);
+	crypto.getRandomValues(bytes);
+	return Array.from(bytes)
+		.map((b) => b.toString(16).padStart(2, '0'))
+		.join('');
+}
+
+// ============================================================================
 // HOLOSPHERE SERVICE
 // ============================================================================
 
@@ -74,10 +115,13 @@ class IntegralHoloSphereService {
 	async init(): Promise<void> {
 		if (this.initialized) return;
 
+		// Get or create a persistent private key
+		const privateKey = this.config.privateKey || getOrCreatePrivateKey();
+
 		this.hs = new HoloSphere({
 			appName: this.config.appName,
 			relays: this.config.relays,
-			privateKey: this.config.privateKey,
+			privateKey: privateKey,
 			logLevel: this.config.logLevel,
 			persistence: true,
 			backgroundSync: true
@@ -287,11 +331,24 @@ class IntegralHoloSphereService {
 		return submission;
 	}
 
-	async listScenarios(issueId: string): Promise<Scenario[]> {
+	async listSubmissions(issueId?: string): Promise<Submission[]> {
+		await this.ensureInitialized();
+		const submissions = await this.hs!.getAll(this.nodeId, 'cds_submissions');
+		let submissionList = Object.values(submissions || {}) as Submission[];
+		if (issueId) {
+			submissionList = submissionList.filter(s => s.issueId === issueId);
+		}
+		return submissionList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+	}
+
+	async listScenarios(issueId?: string): Promise<Scenario[]> {
 		await this.ensureInitialized();
 		const scenarios = await this.hs!.getAll(this.nodeId, 'cds_scenarios');
-		const scenarioList = Object.values(scenarios || {}) as Scenario[];
-		return scenarioList.filter(s => s.issueId === issueId);
+		let scenarioList = Object.values(scenarios || {}) as Scenario[];
+		if (issueId) {
+			scenarioList = scenarioList.filter(s => s.issueId === issueId);
+		}
+		return scenarioList;
 	}
 
 	async createScenario(issueId: string, data: { label: string; parameters: Record<string, unknown> }): Promise<Scenario> {
@@ -305,6 +362,16 @@ class IntegralHoloSphereService {
 		await this.hs!.write(this.nodeId, 'cds_scenarios', scenario);
 		await this.logActivity('CDS', 'scenario_created', `Scenario created: ${scenario.label}`);
 		return scenario;
+	}
+
+	async listVotes(scenarioId?: string): Promise<Vote[]> {
+		await this.ensureInitialized();
+		const votes = await this.hs!.getAll(this.nodeId, 'cds_votes');
+		let voteList = Object.values(votes || {}) as Vote[];
+		if (scenarioId) {
+			voteList = voteList.filter((v: any) => v.scenarioId === scenarioId);
+		}
+		return voteList;
 	}
 
 	async castVote(scenarioId: string, data: { participantId: string; supportLevel: string }): Promise<{ success: boolean }> {
@@ -446,6 +513,12 @@ class IntegralHoloSphereService {
 		return version;
 	}
 
+	async listEcoAssessments(): Promise<EcoAssessment[]> {
+		await this.ensureInitialized();
+		const assessments = await this.hs!.getAll(this.nodeId, 'oad_eco_assessments');
+		return Object.values(assessments || {}) as EcoAssessment[];
+	}
+
 	async getEcoAssessment(versionId: string): Promise<EcoAssessment | null> {
 		await this.ensureInitialized();
 		return await this.hs!.read(this.nodeId, 'oad_eco_assessments', versionId);
@@ -482,6 +555,12 @@ class IntegralHoloSphereService {
 		await this.hs!.write(this.nodeId, 'oad_eco_assessments', assessment);
 		await this.logActivity('OAD', 'eco_assessment_computed', `Eco assessment computed for version ${versionId}`);
 		return assessment;
+	}
+
+	async listCertifications(): Promise<CertificationRecord[]> {
+		await this.ensureInitialized();
+		const certifications = await this.hs!.getAll(this.nodeId, 'oad_certifications');
+		return Object.values(certifications || {}) as CertificationRecord[];
 	}
 
 	async getCertification(versionId: string): Promise<CertificationRecord | null> {
@@ -619,6 +698,12 @@ class IntegralHoloSphereService {
 		return valuation;
 	}
 
+	async listValuations(): Promise<AccessValuation[]> {
+		await this.ensureInitialized();
+		const valuations = await this.hs!.getAll(this.nodeId, 'itc_valuations');
+		return Object.values(valuations || {}) as AccessValuation[];
+	}
+
 	async getValuation(itemId: string): Promise<AccessValuation | null> {
 		await this.ensureInitialized();
 		return await this.hs!.read(this.nodeId, 'itc_valuations', itemId);
@@ -698,6 +783,12 @@ class IntegralHoloSphereService {
 		return plan;
 	}
 
+	async listAllTasks(): Promise<TaskInstance[]> {
+		await this.ensureInitialized();
+		const tasks = await this.hs!.getAll(this.nodeId, 'cos_tasks');
+		return Object.values(tasks || {}) as TaskInstance[];
+	}
+
 	async listTasks(planId: string): Promise<TaskInstance[]> {
 		await this.ensureInitialized();
 		const tasks = await this.hs!.getAll(this.nodeId, 'cos_tasks');
@@ -767,11 +858,23 @@ class IntegralHoloSphereService {
 		return task;
 	}
 
+	async listConstraints(): Promise<COSConstraint[]> {
+		await this.ensureInitialized();
+		const constraints = await this.hs!.getAll(this.nodeId, 'cos_constraints');
+		return Object.values(constraints || {}) as COSConstraint[];
+	}
+
 	async detectBottlenecks(planId: string): Promise<COSConstraint[]> {
 		await this.ensureInitialized();
 		const constraints = await this.hs!.getAll(this.nodeId, 'cos_constraints');
 		const constraintList = Object.values(constraints || {}) as COSConstraint[];
 		return constraintList.filter(c => c.planId === planId);
+	}
+
+	async listInventory(): Promise<MaterialInventory[]> {
+		await this.ensureInitialized();
+		const inventory = await this.hs!.getAll(this.nodeId, 'cos_inventory');
+		return Object.values(inventory || {}) as MaterialInventory[];
 	}
 
 	async getMaterialInventory(planId: string): Promise<Record<string, number>> {
@@ -783,6 +886,12 @@ class IntegralHoloSphereService {
 	// ==========================================================================
 	// FRS OPERATIONS
 	// ==========================================================================
+
+	async listSignalPackets(): Promise<SignalPacket[]> {
+		await this.ensureInitialized();
+		const packets = await this.hs!.getAll(this.nodeId, 'frs_signal_packets');
+		return Object.values(packets || {}) as SignalPacket[];
+	}
 
 	async createSignalPacket(): Promise<{ packetId: string; signalCount: number }> {
 		await this.ensureInitialized();
@@ -880,6 +989,28 @@ class IntegralHoloSphereService {
 
 		await this.logActivity('FRS', 'recommendations_generated', `${recommendations.length} recommendations generated`);
 		return recommendations;
+	}
+
+	async listMemories(): Promise<MemoryRecord[]> {
+		await this.ensureInitialized();
+		const memories = await this.hs!.getAll(this.nodeId, 'frs_memories');
+		return (Object.values(memories || {}) as MemoryRecord[])
+			.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+	}
+
+	async createMemory(data: { recordType: MemoryRecord['recordType']; title: string; narrative: string }): Promise<MemoryRecord> {
+		await this.ensureInitialized();
+		const memory: MemoryRecord = {
+			id: this.generateId(),
+			nodeId: this.nodeId,
+			createdAt: new Date().toISOString(),
+			recordType: data.recordType,
+			title: data.title,
+			narrative: data.narrative
+		};
+		await this.hs!.write(this.nodeId, 'frs_memories', memory);
+		await this.logActivity('FRS', 'memory_created', `Institutional memory recorded: ${data.title}`);
+		return memory;
 	}
 
 	async getFRSDashboard(): Promise<{
@@ -1015,6 +1146,61 @@ class IntegralHoloSphereService {
 		const sub = this.hs.subscribe(this.nodeId, 'activity_feed', async () => {
 			const activities = await this.getActivityFeed();
 			callback(activities);
+		});
+
+		return { unsubscribe: () => sub.then(s => s.unsubscribe()) };
+	}
+
+	subscribeToDesigns(callback: (designs: DesignVersion[]) => void): { unsubscribe: () => void } {
+		if (!this.hs) return { unsubscribe: () => {} };
+
+		const sub = this.hs.subscribe(this.nodeId, 'oad_versions', async () => {
+			const designs = await this.listVersions();
+			callback(designs);
+		});
+
+		return { unsubscribe: () => sub.then(s => s.unsubscribe()) };
+	}
+
+	subscribeToPlans(callback: (plans: ProductionPlan[]) => void): { unsubscribe: () => void } {
+		if (!this.hs) return { unsubscribe: () => {} };
+
+		const sub = this.hs.subscribe(this.nodeId, 'cos_plans', async () => {
+			const plans = await this.listPlans();
+			callback(plans);
+		});
+
+		return { unsubscribe: () => sub.then(s => s.unsubscribe()) };
+	}
+
+	subscribeToFindings(callback: (findings: DiagnosticFinding[]) => void): { unsubscribe: () => void } {
+		if (!this.hs) return { unsubscribe: () => {} };
+
+		const sub = this.hs.subscribe(this.nodeId, 'frs_findings', async () => {
+			const findings = await this.listFindings();
+			callback(findings);
+		});
+
+		return { unsubscribe: () => sub.then(s => s.unsubscribe()) };
+	}
+
+	subscribeToNodes(callback: (nodes: FederatedNode[]) => void): { unsubscribe: () => void } {
+		if (!this.hs) return { unsubscribe: () => {} };
+
+		const sub = this.hs.subscribe(this.nodeId, 'federation_nodes', async () => {
+			const nodes = await this.listFederatedNodes();
+			callback(nodes);
+		});
+
+		return { unsubscribe: () => sub.then(s => s.unsubscribe()) };
+	}
+
+	subscribeToMessages(callback: (messages: FederatedMessage[]) => void): { unsubscribe: () => void } {
+		if (!this.hs) return { unsubscribe: () => {} };
+
+		const sub = this.hs.subscribe(this.nodeId, 'federation_messages', async () => {
+			const messages = await this.listFederationMessages();
+			callback(messages);
 		});
 
 		return { unsubscribe: () => sub.then(s => s.unsubscribe()) };

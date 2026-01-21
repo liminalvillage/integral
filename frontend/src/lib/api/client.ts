@@ -11,6 +11,7 @@ import type {
 	Issue,
 	Submission,
 	Scenario,
+	Vote,
 	Decision,
 	DesignSpec,
 	DesignVersion,
@@ -22,8 +23,11 @@ import type {
 	ProductionPlan,
 	TaskInstance,
 	COSConstraint,
+	MaterialInventory,
+	SignalPacket,
 	DiagnosticFinding,
 	Recommendation,
+	MemoryRecord,
 	FederatedNode,
 	FederatedMessage,
 	ActivityFeed
@@ -75,18 +79,23 @@ export const cdsApi = {
 		hs.createIssue(data),
 
 	// Submissions
+	listSubmissions: (issueId?: string): Promise<Submission[]> => hs.listSubmissions(issueId),
+
 	addSubmission: (
 		issueId: string,
 		data: { type: string; content: string; authorId: string }
 	): Promise<Submission> => hs.addSubmission(issueId, data),
 
 	// Scenarios
-	listScenarios: (issueId: string): Promise<Scenario[]> => hs.listScenarios(issueId),
+	listScenarios: (issueId?: string): Promise<Scenario[]> => hs.listScenarios(issueId),
 
 	createScenario: (
 		issueId: string,
 		data: { label: string; parameters: Record<string, unknown> }
 	): Promise<Scenario> => hs.createScenario(issueId, data),
+
+	// Votes
+	listVotes: (scenarioId?: string): Promise<Vote[]> => hs.listVotes(scenarioId),
 
 	// Voting
 	castVote: (
@@ -131,6 +140,8 @@ export const oadApi = {
 	}): Promise<DesignVersion> => hs.createVersion(data),
 
 	// Eco Assessment
+	listEcoAssessments: (): Promise<EcoAssessment[]> => hs.listEcoAssessments(),
+
 	getEcoAssessment: (versionId: string): Promise<EcoAssessment | null> =>
 		hs.getEcoAssessment(versionId),
 
@@ -138,6 +149,8 @@ export const oadApi = {
 		hs.computeEcoAssessment(versionId),
 
 	// Certification
+	listCertifications: (): Promise<CertificationRecord[]> => hs.listCertifications(),
+
 	getCertification: (versionId: string): Promise<CertificationRecord | null> =>
 		hs.getCertification(versionId),
 
@@ -172,6 +185,8 @@ export const itcApi = {
 		hs.verifyLabor(eventId, verifierId),
 
 	// Access Valuation
+	listValuations: (): Promise<AccessValuation[]> => hs.listValuations(),
+
 	computeValuation: (itemId: string, versionId: string): Promise<AccessValuation> =>
 		hs.computeValuation(itemId, versionId),
 
@@ -203,6 +218,8 @@ export const cosApi = {
 		hs.createPlan(data),
 
 	// Tasks
+	listAllTasks: (): Promise<TaskInstance[]> => hs.listAllTasks(),
+
 	listTasks: (planId: string): Promise<TaskInstance[]> => hs.listTasks(planId),
 
 	getTask: (taskId: string): Promise<TaskInstance | null> => hs.getTask(taskId),
@@ -221,9 +238,13 @@ export const cosApi = {
 		hs.blockTask(taskId, reason),
 
 	// Constraints
+	listConstraints: (): Promise<COSConstraint[]> => hs.listConstraints(),
+
 	detectBottlenecks: (planId: string): Promise<COSConstraint[]> => hs.detectBottlenecks(planId),
 
 	// Materials
+	listInventory: (): Promise<MaterialInventory[]> => hs.listInventory(),
+
 	getMaterialInventory: (planId: string): Promise<Record<string, number>> =>
 		hs.getMaterialInventory(planId)
 };
@@ -234,6 +255,8 @@ export const cosApi = {
 
 export const frsApi = {
 	// Signals
+	listSignalPackets: (): Promise<SignalPacket[]> => hs.listSignalPackets(),
+
 	createSignalPacket: (): Promise<{ packetId: string; signalCount: number }> =>
 		hs.createSignalPacket(),
 
@@ -248,6 +271,12 @@ export const frsApi = {
 
 	generateRecommendations: (findingIds: string[]): Promise<Recommendation[]> =>
 		hs.generateRecommendations(findingIds),
+
+	// Memories
+	listMemories: (): Promise<MemoryRecord[]> => hs.listMemories(),
+
+	createMemory: (data: { recordType: MemoryRecord['recordType']; title: string; narrative: string }): Promise<MemoryRecord> =>
+		hs.createMemory(data),
 
 	// Dashboard
 	getDashboard: (): Promise<{
@@ -303,7 +332,17 @@ export const subscriptions = {
 	subscribeToAccounts: (callback: (accounts: ITCAccount[]) => void) =>
 		hs.subscribeToAccounts(callback),
 	subscribeToActivity: (callback: (activities: ActivityFeed[]) => void) =>
-		hs.subscribeToActivity(callback)
+		hs.subscribeToActivity(callback),
+	subscribeToDesigns: (callback: (designs: DesignVersion[]) => void) =>
+		hs.subscribeToDesigns(callback),
+	subscribeToPlans: (callback: (plans: ProductionPlan[]) => void) =>
+		hs.subscribeToPlans(callback),
+	subscribeToFindings: (callback: (findings: DiagnosticFinding[]) => void) =>
+		hs.subscribeToFindings(callback),
+	subscribeToNodes: (callback: (nodes: FederatedNode[]) => void) =>
+		hs.subscribeToNodes(callback),
+	subscribeToMessages: (callback: (messages: FederatedMessage[]) => void) =>
+		hs.subscribeToMessages(callback)
 };
 
 // ============================================================================

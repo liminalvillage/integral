@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, EmptyState, ProgressBar } from '$lib/components/ui';
 	import { issues, selectedIssue } from '$lib/stores';
@@ -36,56 +35,6 @@
 		{ id: 'deliberation', label: 'Deliberation', count: 0 },
 		{ id: 'decided', label: 'Decided', count: 0 }
 	];
-
-	// Mock data
-	onMount(() => {
-		issues.set([
-			{
-				id: 'issue_1',
-				title: 'Community Workshop Equipment Proposal',
-				description: 'Proposal to acquire shared woodworking and metalworking equipment for the community workshop space.',
-				nodeId: 'node_abc',
-				status: 'deliberation',
-				createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-				lastUpdatedAt: new Date(Date.now() - 3600000).toISOString(),
-				submissionCount: 12,
-				metadata: { category: 'infrastructure', priority: 'high' }
-			},
-			{
-				id: 'issue_2',
-				title: 'ITC Decay Rate Adjustment',
-				description: 'Review and potential adjustment of the current ITC decay parameters based on community feedback.',
-				nodeId: 'node_abc',
-				status: 'context_ready',
-				createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
-				lastUpdatedAt: new Date(Date.now() - 86400000).toISOString(),
-				submissionCount: 28,
-				metadata: { category: 'policy', priority: 'medium' }
-			},
-			{
-				id: 'issue_3',
-				title: 'Solar Panel Installation Schedule',
-				description: 'Coordinating the installation timeline for the approved solar panel system.',
-				nodeId: 'node_abc',
-				status: 'decided',
-				createdAt: new Date(Date.now() - 86400000 * 14).toISOString(),
-				lastUpdatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-				submissionCount: 45,
-				metadata: { category: 'infrastructure', priority: 'high', consensusScore: 0.87 }
-			},
-			{
-				id: 'issue_4',
-				title: 'New Member Onboarding Process',
-				description: 'Improving the onboarding experience for new cooperative members.',
-				nodeId: 'node_abc',
-				status: 'intake',
-				createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-				lastUpdatedAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-				submissionCount: 3,
-				metadata: { category: 'governance', priority: 'low' }
-			}
-		]);
-	});
 
 	$: filteredIssues = activeTab === 'all'
 		? $issues

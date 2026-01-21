@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, StatCard, ProgressBar, EmptyState, Modal, Input } from '$lib/components/ui';
-	import { findings } from '$lib/stores';
+	import { findings, recommendations as recommendationsStore, memories } from '$lib/stores';
+	import { frsApi } from '$lib/api/client';
 	import { toasts } from '$lib/stores/toast';
-	import type { DiagnosticFinding, Recommendation } from '$lib/types';
+	import { refreshRecommendations, refreshMemories } from '$lib/services/dataLoader';
+	import type { DiagnosticFinding, Recommendation, MemoryRecord } from '$lib/types';
 	import {
 		Activity,
 		AlertTriangle,
@@ -22,7 +23,9 @@
 	} from 'lucide-svelte';
 
 	let activeTab = 'overview';
-	let recommendations: Recommendation[] = [];
+
+	// Use recommendations from store
+	$: recommendations = $recommendationsStore;
 
 	// Recommendation actions state
 	let selectedRecommendation: Recommendation | null = null;
@@ -72,68 +75,6 @@
 		coordination_fragility: Zap
 	};
 
-	// Mock data
-	onMount(() => {
-		findings.set([
-			{
-				id: 'find_1',
-				nodeId: 'node_abc',
-				createdAt: new Date(Date.now() - 3600000).toISOString(),
-				findingType: 'labor_stress',
-				severity: 'moderate',
-				confidence: 'confident',
-				summary: 'Expert-level labor showing increased demand pressure',
-				rationale: 'Labor allocation signals indicate 65% utilization of expert capacity, approaching stress threshold.',
-				indicators: { stress_index: 0.65, utilization: 0.72 }
-			},
-			{
-				id: 'find_2',
-				nodeId: 'node_abc',
-				createdAt: new Date(Date.now() - 7200000).toISOString(),
-				findingType: 'ecological_overshoot',
-				severity: 'low',
-				confidence: 'provisional',
-				summary: 'Material sourcing approaching sustainability threshold',
-				rationale: 'External procurement ratio increased 15% this cycle, approaching autonomy limits.',
-				indicators: { eco_score: 0.48, external_ratio: 0.35 }
-			},
-			{
-				id: 'find_3',
-				nodeId: 'node_abc',
-				createdAt: new Date(Date.now() - 86400000).toISOString(),
-				findingType: 'material_dependency',
-				severity: 'low',
-				confidence: 'confident',
-				summary: 'Solar cell supply chain concentration detected',
-				rationale: 'Single supplier accounts for 78% of solar cell procurement.',
-				indicators: { herfindahl: 0.61, critical_external: 0.15 }
-			}
-		]);
-
-		recommendations = [
-			{
-				id: 'rec_1',
-				nodeId: 'node_abc',
-				createdAt: new Date(Date.now() - 1800000).toISOString(),
-				targetSystem: 'COS',
-				recommendationType: 'workload_rebalancing',
-				severity: 'moderate',
-				summary: 'Rebalance expert-level tasks across cooperatives',
-				rationale: 'Current distribution creates bottleneck risk. Consider cross-training or task redistribution.'
-			},
-			{
-				id: 'rec_2',
-				nodeId: 'node_abc',
-				createdAt: new Date(Date.now() - 5400000).toISOString(),
-				targetSystem: 'CDS',
-				recommendationType: 'policy_review',
-				severity: 'low',
-				summary: 'Review material procurement policies',
-				rationale: 'Diversifying suppliers would reduce dependency risk and improve autonomy index.'
-			}
-		];
-	});
-
 	$: criticalCount = $findings.filter(f => f.severity === 'critical').length;
 	$: moderateCount = $findings.filter(f => f.severity === 'moderate').length;
 	$: systemHealth = criticalCount > 0 ? 'critical' : moderateCount > 2 ? 'warning' : 'healthy';
@@ -155,7 +96,7 @@
 	}
 
 	function handleDismissRecommendation(rec: Recommendation) {
-		recommendations = recommendations.filter(r => r.id !== rec.id);
+		recommendationsStore.update(recs => recs.filter(r => r.id !== rec.id));
 		toasts.info('Recommendation Dismissed', 'The recommendation has been dismissed');
 	}
 
@@ -169,7 +110,7 @@
 		};
 
 		sessionStorage.setItem('routed_recommendation', JSON.stringify(rec));
-		recommendations = recommendations.filter(r => r.id !== rec.id);
+		recommendationsStore.update(recs => recs.filter(r => r.id !== rec.id));
 		toasts.success('Recommendation Accepted', `Routing to ${rec.targetSystem}`);
 		goto(routes[rec.targetSystem] ?? '/');
 	}
@@ -184,10 +125,12 @@
 	function handleSaveModification() {
 		if (!selectedRecommendation) return;
 
-		recommendations = recommendations.map(r =>
-			r.id === selectedRecommendation!.id
-				? { ...r, summary: modifiedSummary, rationale: modifiedRationale }
-				: r
+		recommendationsStore.update(recs =>
+			recs.map(r =>
+				r.id === selectedRecommendation!.id
+					? { ...r, summary: modifiedSummary, rationale: modifiedRationale }
+					: r
+			)
 		);
 		toasts.success('Recommendation Updated', 'Changes have been saved');
 		showModifyModal = false;
@@ -202,16 +145,15 @@
 
 		isRecordingLearning = true;
 		try {
-			// Store in localStorage as no API endpoint exists
-			const memories = JSON.parse(localStorage.getItem('integral_memories') ?? '[]');
-			memories.push({
-				id: `mem_${Date.now()}`,
-				type: learningType,
+			// Store in HoloSphere
+			await frsApi.createMemory({
+				recordType: learningType,
 				title: learningTitle,
-				narrative: learningNarrative,
-				createdAt: new Date().toISOString()
+				narrative: learningNarrative
 			});
-			localStorage.setItem('integral_memories', JSON.stringify(memories));
+
+			// Refresh memories from store
+			await refreshMemories();
 
 			toasts.success('Learning Recorded', 'Institutional memory updated');
 			showRecordLearningModal = false;
@@ -443,16 +385,38 @@
 
 	{:else if activeTab === 'memory'}
 		<Card>
-			<h3 class="section-header">Institutional Memory</h3>
-			<EmptyState
-				title="Memory records"
-				description="Historical learnings and institutional knowledge"
-				icon={Brain}
-			>
-				<Button slot="action" variant="primary" on:click={() => showRecordLearningModal = true}>
+			<div class="flex items-center justify-between mb-4">
+				<h3 class="section-header mb-0">Institutional Memory</h3>
+				<Button variant="primary" size="sm" on:click={() => showRecordLearningModal = true}>
 					Record Learning
 				</Button>
-			</EmptyState>
+			</div>
+			{#if $memories.length === 0}
+				<EmptyState
+					title="No memory records"
+					description="Record learnings to build institutional knowledge"
+					icon={Brain}
+				>
+					<Button slot="action" variant="primary" on:click={() => showRecordLearningModal = true}>
+						Record Learning
+					</Button>
+				</EmptyState>
+			{:else}
+				<div class="space-y-4">
+					{#each $memories as memory}
+						<div class="p-4 rounded-lg bg-surface-800/50">
+							<div class="flex items-start justify-between mb-2">
+								<div class="flex items-center gap-2">
+									<Badge variant="info">{memory.recordType}</Badge>
+								</div>
+								<span class="text-xs text-surface-500">{formatTime(memory.createdAt)}</span>
+							</div>
+							<h4 class="text-surface-100 font-medium mb-2">{memory.title}</h4>
+							<p class="text-sm text-surface-400">{memory.narrative}</p>
+						</div>
+					{/each}
+				</div>
+			{/if}
 		</Card>
 	{/if}
 </PageContainer>

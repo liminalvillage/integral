@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { Sidebar } from '$lib/components/layout';
 	import { Toast } from '$lib/components/ui';
@@ -8,10 +8,12 @@
 	import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
 	import { sidebarOpen, nodeStatus, isConnected, isLoading } from '$lib/stores';
 	import { holosphere, nodeApi } from '$lib/api/client';
+	import { loadAllData, setupSubscriptions } from '$lib/services/dataLoader';
 
 	let showOnboarding = false;
 	let mounted = false;
 	let initError: string | null = null;
+	let unsubscribe: (() => void) | null = null;
 
 	onMount(async () => {
 		mounted = true;
@@ -33,6 +35,12 @@
 			// Get actual node status from HoloSphere
 			const status = await nodeApi.getStatus();
 			nodeStatus.set(status);
+
+			// Load all data from HoloSphere (seeds if empty)
+			await loadAllData();
+
+			// Setup real-time subscriptions
+			unsubscribe = setupSubscriptions();
 		} catch (error) {
 			console.error('Failed to initialize HoloSphere:', error);
 			initError = error instanceof Error ? error.message : 'Unknown error';
@@ -55,6 +63,12 @@
 			});
 		} finally {
 			isLoading.set(false);
+		}
+	});
+
+	onDestroy(() => {
+		if (unsubscribe) {
+			unsubscribe();
 		}
 	});
 

@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, Modal, Input, StatCard, ProgressBar, EmptyState } from '$lib/components/ui';
-	import { productionPlans } from '$lib/stores';
+	import { productionPlans, tasks as tasksStore, materialInventory } from '$lib/stores';
 	import { cosApi } from '$lib/api/client';
 	import { toasts } from '$lib/stores/toast';
+	import { refreshTasks, refreshPlans } from '$lib/services/dataLoader';
 	import type { ProductionPlan, TaskInstance } from '$lib/types';
 	import {
 		Factory,
@@ -24,7 +24,9 @@
 
 	let activeTab = 'plans';
 	let showCreateModal = false;
-	let tasks: TaskInstance[] = [];
+
+	// Use tasks from store
+	$: tasks = $tasksStore;
 
 	// Create plan form state
 	let selectedVersionId = 'ver_1';
@@ -52,86 +54,6 @@
 		done: 'success',
 		cancelled: 'info'
 	} as const;
-
-	// Mock data
-	onMount(() => {
-		productionPlans.set([
-			{
-				planId: 'plan_1',
-				nodeId: 'node_abc',
-				versionId: 'ver_1',
-				batchId: 'batch_47',
-				batchSize: 10,
-				createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-				taskCount: 45,
-				completedTasks: 32,
-				expectedLaborHours: 180
-			},
-			{
-				planId: 'plan_2',
-				nodeId: 'node_abc',
-				versionId: 'ver_2',
-				batchId: 'batch_48',
-				batchSize: 5,
-				createdAt: new Date(Date.now() - 86400000).toISOString(),
-				taskCount: 25,
-				completedTasks: 8,
-				expectedLaborHours: 95
-			},
-			{
-				planId: 'plan_3',
-				nodeId: 'node_abc',
-				versionId: 'ver_4',
-				batchId: 'batch_49',
-				batchSize: 20,
-				createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-				taskCount: 80,
-				completedTasks: 0,
-				expectedLaborHours: 320
-			}
-		]);
-
-		tasks = [
-			{
-				id: 'task_1',
-				definitionId: 'def_1',
-				batchId: 'batch_47',
-				status: 'in_progress',
-				assignedCoopId: 'coop_a',
-				scheduledStart: new Date(Date.now() - 3600000 * 2).toISOString(),
-				actualHours: 1.5,
-				participants: ['Alice', 'Bob'],
-				blockReasons: []
-			},
-			{
-				id: 'task_2',
-				definitionId: 'def_2',
-				batchId: 'batch_47',
-				status: 'pending',
-				actualHours: 0,
-				participants: [],
-				blockReasons: []
-			},
-			{
-				id: 'task_3',
-				definitionId: 'def_3',
-				batchId: 'batch_48',
-				status: 'blocked',
-				actualHours: 0,
-				participants: ['Carol'],
-				blockReasons: ['Waiting for materials', 'Tool unavailable']
-			},
-			{
-				id: 'task_4',
-				definitionId: 'def_4',
-				batchId: 'batch_47',
-				status: 'done',
-				actualHours: 3.5,
-				participants: ['Dave', 'Eve'],
-				blockReasons: []
-			}
-		];
-	});
 
 	$: activePlans = $productionPlans.filter(p => p.completedTasks < p.taskCount);
 	$: totalTasks = $productionPlans.reduce((sum, p) => sum + p.taskCount, 0);
@@ -178,8 +100,8 @@
 	async function handleStartTask(task: TaskInstance) {
 		startingTaskId = task.id;
 		try {
-			const updated = await cosApi.startTask(task.id);
-			tasks = tasks.map(t => t.id === task.id ? updated : t);
+			await cosApi.startTask(task.id);
+			await refreshTasks();
 			toasts.success('Task Started', `Task ${task.definitionId} is now in progress`);
 		} catch (error) {
 			toasts.error('Failed to Start Task', error instanceof Error ? error.message : 'Unknown error');
@@ -199,8 +121,8 @@
 
 		completingTaskId = taskToComplete.id;
 		try {
-			const updated = await cosApi.completeTask(taskToComplete.id, completeTaskHours);
-			tasks = tasks.map(t => t.id === taskToComplete!.id ? updated : t);
+			await cosApi.completeTask(taskToComplete.id, completeTaskHours);
+			await Promise.all([refreshTasks(), refreshPlans()]);
 			toasts.success('Task Completed', `Task ${taskToComplete.definitionId} marked as done`);
 			showCompleteModal = false;
 			taskToComplete = null;
@@ -401,12 +323,7 @@
 			<Card>
 				<h3 class="section-header">Material Inventory</h3>
 				<div class="space-y-3">
-					{#each [
-						{ name: 'Aluminum Extrusion', quantity: 45, unit: 'kg', scarcity: 0.2 },
-						{ name: 'Steel Bolts (M8)', quantity: 200, unit: 'pcs', scarcity: 0.1 },
-						{ name: 'Solar Cells', quantity: 80, unit: 'pcs', scarcity: 0.6 },
-						{ name: 'Tempered Glass', quantity: 12, unit: 'm²', scarcity: 0.4 }
-					] as material}
+					{#each $materialInventory as material}
 						<div class="p-3 rounded-lg bg-surface-800/50">
 							<div class="flex justify-between mb-2">
 								<span class="text-surface-200">{material.name}</span>
@@ -414,13 +331,13 @@
 							</div>
 							<div class="flex items-center gap-2">
 								<ProgressBar
-									value={(1 - material.scarcity) * 100}
+									value={(1 - material.scarcityIndex) * 100}
 									max={100}
-									color={material.scarcity > 0.5 ? 'danger' : material.scarcity > 0.3 ? 'warning' : 'success'}
+									color={material.scarcityIndex > 0.5 ? 'danger' : material.scarcityIndex > 0.3 ? 'warning' : 'success'}
 									size="sm"
 									class="flex-1"
 								/>
-								{#if material.scarcity > 0.5}
+								{#if material.scarcityIndex > 0.5}
 									<AlertTriangle size={14} class="text-red-400" />
 								{/if}
 							</div>

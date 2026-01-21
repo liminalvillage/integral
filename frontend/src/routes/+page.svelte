@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { PageContainer, Header } from '$lib/components/layout';
 	import { Card, StatCard, Badge, Button, Alert, ProgressBar, Tooltip } from '$lib/components/ui';
 	import { LineChart, DonutChart, BarChart } from '$lib/components/charts';
 	import { toasts } from '$lib/stores/toast';
 	import { dashboardStats, activityFeed, nodeStatus, findings } from '$lib/stores';
+	import { refreshDashboardStats } from '$lib/services/dataLoader';
 	import {
 		Vote,
 		Lightbulb,
@@ -65,9 +65,14 @@
 
 	async function refreshData() {
 		isLoading = true;
-		await new Promise(resolve => setTimeout(resolve, 1000));
-		isLoading = false;
-		toasts.success('Dashboard Refreshed', 'All data has been updated');
+		try {
+			await refreshDashboardStats();
+			toasts.success('Dashboard Refreshed', 'All data has been updated');
+		} catch (error) {
+			toasts.error('Refresh Failed', 'Could not refresh dashboard data');
+		} finally {
+			isLoading = false;
+		}
 	}
 
 	function formatTime(timestamp: string): string {
@@ -78,83 +83,6 @@
 		if (hours < 24) return `${hours}h ago`;
 		return `${Math.floor(hours / 24)}d ago`;
 	}
-
-	onMount(() => {
-		// Initialize mock data
-		dashboardStats.set({
-			activeIssues: 12,
-			pendingDecisions: 3,
-			activeDesigns: 28,
-			totalLaborHours: 2450.5,
-			activeTasks: 45,
-			activeFindings: 5,
-			connectedNodes: 7,
-			systemHealth: 'healthy'
-		});
-
-		activityFeed.set([
-			{
-				id: '1',
-				type: 'decision_made',
-				system: 'CDS',
-				summary: 'Community workshop proposal approved with 87% consensus',
-				timestamp: new Date(Date.now() - 300000).toISOString()
-			},
-			{
-				id: '2',
-				type: 'design_certified',
-				system: 'OAD',
-				summary: 'Solar panel mount v2.3 passed ecological assessment',
-				timestamp: new Date(Date.now() - 900000).toISOString()
-			},
-			{
-				id: '3',
-				type: 'labor_recorded',
-				system: 'ITC',
-				summary: '24 hours of collective labor credited across 8 members',
-				timestamp: new Date(Date.now() - 1800000).toISOString()
-			},
-			{
-				id: '4',
-				type: 'task_completed',
-				system: 'COS',
-				summary: 'Batch #47 assembly phase completed ahead of schedule',
-				timestamp: new Date(Date.now() - 3600000).toISOString()
-			},
-			{
-				id: '5',
-				type: 'node_joined',
-				system: 'FED',
-				summary: 'New node "riverside-coop" joined the federation',
-				timestamp: new Date(Date.now() - 7200000).toISOString()
-			}
-		]);
-
-		findings.set([
-			{
-				id: '1',
-				nodeId: 'node_abc',
-				createdAt: new Date().toISOString(),
-				findingType: 'labor_stress',
-				severity: 'moderate',
-				confidence: 'confident',
-				summary: 'Expert-level labor showing increased demand',
-				rationale: 'Labor allocation signals indicate potential bottleneck',
-				indicators: { stress_index: 0.65 }
-			},
-			{
-				id: '2',
-				nodeId: 'node_abc',
-				createdAt: new Date().toISOString(),
-				findingType: 'ecological_overshoot',
-				severity: 'low',
-				confidence: 'provisional',
-				summary: 'Material sourcing approaching sustainability threshold',
-				rationale: 'External procurement ratio increased 15% this cycle',
-				indicators: { eco_score: 0.48 }
-			}
-		]);
-	});
 </script>
 
 <PageContainer>
