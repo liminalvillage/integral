@@ -1,14 +1,13 @@
 <script lang="ts">
 	import { Header, PageContainer } from '$lib/components/layout';
-	import { Card, Button, Badge, Tabs, StatCard, EmptyState, StatusIndicator, Modal, Input } from '$lib/components/ui';
+	import { Card, Button, Badge, Tabs, StatCard, StatusIndicator, Modal, Input } from '$lib/components/ui';
 	import { federatedNodes, federatedMessages, nodeStatus } from '$lib/stores';
 	import { federationApi } from '$lib/api/client';
 	import { toasts } from '$lib/stores/toast';
 	import { refreshMessages } from '$lib/services/dataLoader';
-	import type { FederatedNode, FederatedMessage } from '$lib/types';
+	import type { FederatedNode } from '$lib/types';
 	import {
 		Globe,
-		Users,
 		Radio,
 		MessageSquare,
 		Send,
@@ -16,9 +15,7 @@
 		AlertTriangle,
 		Lightbulb,
 		CheckCircle,
-		ExternalLink,
-		Copy,
-		RefreshCw
+		ExternalLink
 	} from 'lucide-svelte';
 
 	let activeTab = 'nodes';
@@ -57,16 +54,9 @@
 	let warningDescription = '';
 	let isIssuingWarning = false;
 
-	// Relay state
-	let relays = ['wss://relay.damus.io', 'wss://relay.nostr.band', 'wss://nos.lol'];
-	let showAddRelayModal = false;
-	let newRelayUrl = '';
-	let refreshingRelay: string | null = null;
-
 	const tabs = [
 		{ id: 'nodes', label: 'Connected Nodes' },
-		{ id: 'messages', label: 'Federation Messages' },
-		{ id: 'identity', label: 'Node Identity' }
+		{ id: 'messages', label: 'Federation Messages' }
 	];
 
 	const messageTypeColors = {
@@ -242,36 +232,6 @@
 			isIssuingWarning = false;
 		}
 	}
-
-	async function handleRefreshRelay(relay: string) {
-		refreshingRelay = relay;
-		try {
-			// Simulate relay refresh (no API endpoint exists)
-			await new Promise(resolve => setTimeout(resolve, 1000));
-			toasts.success('Relay Refreshed', `Connection to ${relay} refreshed`);
-		} catch (error) {
-			toasts.error('Failed to Refresh', error instanceof Error ? error.message : 'Unknown error');
-		} finally {
-			refreshingRelay = null;
-		}
-	}
-
-	function handleAddRelay() {
-		if (!newRelayUrl.trim() || !newRelayUrl.startsWith('wss://')) {
-			toasts.error('Validation Error', 'Enter a valid WebSocket URL (wss://)');
-			return;
-		}
-
-		if (relays.includes(newRelayUrl)) {
-			toasts.warning('Already Exists', 'This relay is already in your list');
-			return;
-		}
-
-		relays = [...relays, newRelayUrl];
-		toasts.success('Relay Added', `Added ${newRelayUrl}`);
-		showAddRelayModal = false;
-		newRelayUrl = '';
-	}
 </script>
 
 <Header
@@ -435,70 +395,6 @@
 				</Card>
 			</div>
 		</div>
-
-	{:else if activeTab === 'identity'}
-		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-			<Card>
-				<h3 class="section-header">Node Identity</h3>
-				<div class="space-y-4">
-					<div>
-						<label class="label">Node ID</label>
-						<div class="flex items-center gap-2">
-							<code class="flex-1 px-3 py-2 bg-surface-800 rounded text-surface-200 font-mono text-sm">
-								{$nodeStatus?.nodeId ?? 'Not connected'}
-							</code>
-							<Button variant="ghost" icon on:click={() => copyToClipboard($nodeStatus?.nodeId ?? '')}>
-								<Copy size={16} />
-							</Button>
-						</div>
-					</div>
-					<div>
-						<label class="label">Public Key (npub)</label>
-						<div class="flex items-center gap-2">
-							<code class="flex-1 px-3 py-2 bg-surface-800 rounded text-surface-200 font-mono text-sm truncate">
-								{$nodeStatus?.publicKey ?? 'Not available'}
-							</code>
-							<Button variant="ghost" icon on:click={() => copyToClipboard($nodeStatus?.publicKey ?? '')}>
-								<Copy size={16} />
-							</Button>
-						</div>
-					</div>
-					<div>
-						<label class="label">Status</label>
-						<div class="flex items-center gap-2">
-							<StatusIndicator
-								status={$nodeStatus?.isRunning ? 'online' : 'offline'}
-								size="lg"
-								pulse={$nodeStatus?.isRunning}
-							/>
-							<span class="text-surface-200">
-								{$nodeStatus?.isRunning ? 'Connected' : 'Disconnected'}
-							</span>
-						</div>
-					</div>
-				</div>
-			</Card>
-
-			<Card>
-				<h3 class="section-header">Connected Relays</h3>
-				<div class="space-y-3">
-					{#each relays as relay}
-						<div class="flex items-center justify-between p-3 rounded-lg bg-surface-800/50">
-							<div class="flex items-center gap-2">
-								<StatusIndicator status="online" />
-								<code class="text-sm text-surface-300 font-mono">{relay}</code>
-							</div>
-							<Button variant="ghost" size="sm" on:click={() => handleRefreshRelay(relay)} loading={refreshingRelay === relay}>
-								<RefreshCw size={14} />
-							</Button>
-						</div>
-					{/each}
-				</div>
-				<Button variant="secondary" class="w-full mt-4" on:click={() => showAddRelayModal = true}>
-					Add Relay
-				</Button>
-			</Card>
-		</div>
 	{/if}
 </PageContainer>
 
@@ -611,16 +507,5 @@
 	<svelte:fragment slot="footer">
 		<Button variant="secondary" on:click={() => showWarningModal = false} disabled={isIssuingWarning}>Cancel</Button>
 		<Button variant="danger" on:click={handleIssueWarning} loading={isIssuingWarning}>Issue Warning</Button>
-	</svelte:fragment>
-</Modal>
-
-<!-- Add Relay Modal -->
-<Modal bind:open={showAddRelayModal} title="Add Relay" size="sm">
-	<div class="space-y-4">
-		<Input label="Relay URL" placeholder="wss://relay.example.com" bind:value={newRelayUrl} />
-	</div>
-	<svelte:fragment slot="footer">
-		<Button variant="secondary" on:click={() => showAddRelayModal = false}>Cancel</Button>
-		<Button variant="primary" on:click={handleAddRelay}>Add Relay</Button>
 	</svelte:fragment>
 </Modal>

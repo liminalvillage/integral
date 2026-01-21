@@ -1,21 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Header, PageContainer } from '$lib/components/layout';
-	import { Card, Button, Badge, Input, Tabs, Modal } from '$lib/components/ui';
-	import { nodeStatus } from '$lib/stores';
+	import { Card, Button, Badge, Input, Modal } from '$lib/components/ui';
 	import { toasts } from '$lib/stores/toast';
 	import { getHoloSphereService } from '$lib/holosphere';
 	import {
-		Settings,
 		User,
 		Bell,
 		Shield,
-		Globe,
-		Database,
-		Palette,
 		Key,
 		Save,
-		RefreshCw,
 		Upload,
 		Copy,
 		Eye,
@@ -32,7 +26,6 @@
 
 	const tabs = [
 		{ id: 'profile', label: 'Profile' },
-		{ id: 'node', label: 'Node Settings' },
 		{ id: 'notifications', label: 'Notifications' },
 		{ id: 'security', label: 'Security' }
 	];
@@ -50,12 +43,6 @@
 	let avatarInput: HTMLInputElement;
 	let keyFileInput: HTMLInputElement;
 
-	// Relay state
-	let relays = ['wss://relay.damus.io', 'wss://relay.nostr.band', 'wss://nos.lol'];
-	let refreshingRelay: string | null = null;
-	let showAddRelayModal = false;
-	let newRelayUrl = '';
-
 	// Key management state
 	let privateKeyHex = '';
 	let publicKeyHex = '';
@@ -63,7 +50,6 @@
 	let showImportKeyModal = false;
 	let importedKey = '';
 	let showConfirmRegenerateModal = false;
-	let showViewKeyModal = false;
 
 	// Load profile and keys on mount
 	onMount(() => {
@@ -199,40 +185,9 @@
 		skills = skills.filter(s => s !== skill);
 	}
 
-	async function handleRefreshRelay(relay: string) {
-		refreshingRelay = relay;
-		try {
-			await new Promise(resolve => setTimeout(resolve, 1000));
-			toasts.success('Relay Refreshed', `Connection to ${relay} refreshed`);
-		} catch (error) {
-			toasts.error('Failed to Refresh', error instanceof Error ? error.message : 'Unknown error');
-		} finally {
-			refreshingRelay = null;
-		}
-	}
-
-	function handleAddRelay() {
-		if (!newRelayUrl.trim() || !newRelayUrl.startsWith('wss://')) {
-			toasts.error('Validation Error', 'Enter a valid WebSocket URL (wss://)');
-			return;
-		}
-		if (relays.includes(newRelayUrl)) {
-			toasts.warning('Already Exists', 'This relay is already in your list');
-			return;
-		}
-		relays = [...relays, newRelayUrl];
-		toasts.success('Relay Added', `Added ${newRelayUrl}`);
-		showAddRelayModal = false;
-		newRelayUrl = '';
-	}
-
 	function handleCopyKey(key: string, label: string) {
 		navigator.clipboard.writeText(key);
 		toasts.success('Copied', `${label} copied to clipboard`);
-	}
-
-	function handleViewKeys() {
-		showViewKeyModal = true;
 	}
 
 	function handleExportPrivateKey() {
@@ -353,8 +308,6 @@
 						>
 							{#if tab.id === 'profile'}
 								<User size={18} />
-							{:else if tab.id === 'node'}
-								<Database size={18} />
 							{:else if tab.id === 'notifications'}
 								<Bell size={18} />
 							{:else if tab.id === 'security'}
@@ -442,55 +395,6 @@
 						</div>
 					</div>
 				</Card>
-
-			{:else if activeTab === 'node'}
-				<div class="space-y-6">
-					<Card>
-						<h3 class="section-header">Node Configuration</h3>
-						<div class="space-y-4">
-							<Input label="Node ID" value={$nodeStatus?.nodeId ?? ''} disabled />
-							<Input label="Federation ID" value="integral-main" />
-							<div>
-								<label class="label">Connected Relays</label>
-								<div class="space-y-2">
-									{#each relays as relay}
-										<div class="flex items-center gap-2">
-											<Input value={relay} class="flex-1" disabled />
-											<Button variant="ghost" icon on:click={() => handleRefreshRelay(relay)} loading={refreshingRelay === relay}>
-												<RefreshCw size={16} />
-											</Button>
-										</div>
-									{/each}
-								</div>
-								<Button variant="secondary" size="sm" class="mt-2" on:click={() => showAddRelayModal = true}>Add Relay</Button>
-							</div>
-						</div>
-					</Card>
-
-					<Card>
-						<h3 class="section-header">Subsystem Settings</h3>
-						<div class="space-y-3">
-							{#each [
-								{ name: 'CDS', label: 'Collaborative Decision System', enabled: true },
-								{ name: 'OAD', label: 'Open Access Design', enabled: true },
-								{ name: 'ITC', label: 'Integral Time Credits', enabled: true },
-								{ name: 'COS', label: 'Cooperative Organization', enabled: true },
-								{ name: 'FRS', label: 'Feedback & Review', enabled: true }
-							] as system}
-								<div class="flex items-center justify-between p-3 rounded-lg bg-surface-800/50">
-									<div>
-										<p class="font-medium text-surface-200">{system.label}</p>
-										<p class="text-xs text-surface-500">{system.name}</p>
-									</div>
-									<label class="relative inline-flex items-center cursor-pointer">
-										<input type="checkbox" checked={system.enabled} class="sr-only peer" />
-										<div class="w-11 h-6 bg-surface-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-									</label>
-								</div>
-							{/each}
-						</div>
-					</Card>
-				</div>
 
 			{:else if activeTab === 'notifications'}
 				<Card>
@@ -673,17 +577,6 @@
 		</div>
 	</div>
 </PageContainer>
-
-<!-- Add Relay Modal -->
-<Modal bind:open={showAddRelayModal} title="Add Relay" size="sm">
-	<div class="space-y-4">
-		<Input label="Relay URL" placeholder="wss://relay.example.com" bind:value={newRelayUrl} />
-	</div>
-	<svelte:fragment slot="footer">
-		<Button variant="secondary" on:click={() => showAddRelayModal = false}>Cancel</Button>
-		<Button variant="primary" on:click={handleAddRelay}>Add Relay</Button>
-	</svelte:fragment>
-</Modal>
 
 <!-- Import Key Modal -->
 <Modal bind:open={showImportKeyModal} title="Import Private Key" size="md">
