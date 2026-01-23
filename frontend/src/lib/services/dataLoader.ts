@@ -335,3 +335,13 @@ export async function refreshMemories(): Promise<void> {
 	const data = await hs.listMemories();
 	memories.set(data);
 }
+
+export async function refreshConstraints(): Promise<void> {
+	const data = await hs.listConstraints();
+	constraints.set(data);
+}
+
+export async function refreshMaterialInventory(): Promise<void> {
+	const data = await hs.listInventory();
+	materialInventory.set(data);
+}

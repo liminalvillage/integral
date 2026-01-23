@@ -2,10 +2,10 @@
 	import { goto } from '$app/navigation';
 	import { Header, PageContainer } from '$lib/components/layout';
 	import { Card, Button, Badge, Tabs, StatCard, ProgressBar, EmptyState, Modal, Input } from '$lib/components/ui';
-	import { findings, recommendations as recommendationsStore, memories } from '$lib/stores';
+	import { findings, recommendations as recommendationsStore, memories, designVersions, itcAccounts, productionPlans, tasks, laborEvents, federatedNodes, issues, votes, materialInventory } from '$lib/stores';
 	import { frsApi } from '$lib/api/client';
 	import { toasts } from '$lib/stores/toast';
-	import { refreshRecommendations, refreshMemories } from '$lib/services/dataLoader';
+	import { refreshRecommendations, refreshMemories, refreshFindings } from '$lib/services/dataLoader';
 	import type { DiagnosticFinding, Recommendation, MemoryRecord } from '$lib/types';
 	import {
 		Activity,
@@ -19,10 +19,12 @@
 		Eye,
 		BarChart3,
 		Zap,
-		ArrowRight
+		ArrowRight,
+		RefreshCw
 	} from 'lucide-svelte';
 
 	let activeTab = 'overview';
+	let isGeneratingSignals = false;
 
 	// Use recommendations from store
 	$: recommendations = $recommendationsStore;
@@ -78,6 +80,72 @@
 	$: criticalCount = $findings.filter(f => f.severity === 'critical').length;
 	$: moderateCount = $findings.filter(f => f.severity === 'moderate').length;
 	$: systemHealth = criticalCount > 0 ? 'critical' : moderateCount > 2 ? 'warning' : 'healthy';
+
+	// Calculate Autonomy Index from real data
+	// Based on: local decision capacity, self-sufficiency, peer participation
+	$: autonomyIndex = (() => {
+		let score = 0.5; // baseline
+
+		// Factor 1: Active governance participation (issues with votes)
+		const issuesWithVotes = $issues.filter(i => i.status === 'deliberation' || i.status === 'decided').length;
+		score += Math.min(0.15, issuesWithVotes * 0.03);
+
+		// Factor 2: Labor self-sufficiency (verified labor events)
+		const verifiedLabor = $laborEvents.filter(e => e.verified).length;
+		const totalLabor = $laborEvents.length;
+		if (totalLabor > 0) {
+			score += (verifiedLabor / totalLabor) * 0.15;
+		}
+
+		// Factor 3: Design certification rate
+		const certifiedDesigns = $designVersions.filter(d => d.status === 'certified').length;
+		const totalDesigns = $designVersions.length;
+		if (totalDesigns > 0) {
+			score += (certifiedDesigns / totalDesigns) * 0.1;
+		}
+
+		// Factor 4: Task completion rate
+		const completedTaskCount = $tasks.filter(t => t.status === 'done').length;
+		const totalTasks = $tasks.length;
+		if (totalTasks > 0) {
+			score += (completedTaskCount / totalTasks) * 0.1;
+		}
+
+		return Math.min(1, Math.max(0, score));
+	})();
+
+	// Calculate Fragility Index from real data
+	// Based on: blocked tasks, critical findings, dependency on external nodes
+	$: fragilityIndex = (() => {
+		let score = 0.1; // baseline
+
+		// Factor 1: Blocked tasks
+		const blockedTasks = $tasks.filter(t => t.status === 'blocked').length;
+		score += Math.min(0.3, blockedTasks * 0.1);
+
+		// Factor 2: Critical findings
+		score += Math.min(0.25, criticalCount * 0.12);
+
+		// Factor 3: Moderate findings
+		score += Math.min(0.15, moderateCount * 0.05);
+
+		// Factor 4: Material scarcity
+		const highScarcityMaterials = $materialInventory.filter(m => m.scarcityIndex > 0.6).length;
+		score += Math.min(0.15, highScarcityMaterials * 0.05);
+
+		// Factor 5: Pending decisions (governance bottleneck)
+		const pendingIssues = $issues.filter(i => i.status === 'intake' || i.status === 'deliberation').length;
+		score += Math.min(0.1, pendingIssues * 0.02);
+
+		return Math.min(1, Math.max(0, score));
+	})();
+
+	// Calculate average Ecological Score from certified designs
+	$: avgEcoScore = (() => {
+		const withScores = $designVersions.filter(d => d.ecoScore !== undefined);
+		if (withScores.length === 0) return 0.5; // neutral if no data
+		return withScores.reduce((sum, d) => sum + (d.ecoScore ?? 0), 0) / withScores.length;
+	})();
 
 	function formatTime(timestamp: string): string {
 		const diff = Date.now() - new Date(timestamp).getTime();
@@ -145,17 +213,15 @@
 
 		isRecordingLearning = true;
 		try {
-			// Store in HoloSphere
 			await frsApi.createMemory({
 				recordType: learningType,
 				title: learningTitle,
 				narrative: learningNarrative
 			});
 
-			// Refresh memories from store
 			await refreshMemories();
 
-			toasts.success('Learning Recorded', 'Institutional memory updated');
+			toasts.success('Learning Recorded', 'Institutional memory updated for peer benefit');
 			showRecordLearningModal = false;
 			learningTitle = '';
 			learningNarrative = '';
@@ -165,6 +231,50 @@
 		} finally {
 			isRecordingLearning = false;
 		}
+	}
+
+	async function handleGenerateSignals() {
+		isGeneratingSignals = true;
+		try {
+			const result = await frsApi.createSignalPacket();
+			if (result.signalCount > 0) {
+				const newFindings = await frsApi.analyzePacket(result.packetId);
+				if (newFindings.length > 0) {
+					await refreshFindings();
+					const newRecs = await frsApi.generateRecommendations(newFindings.map(f => f.id));
+					if (newRecs.length > 0) {
+						await refreshRecommendations();
+					}
+					toasts.success('Analysis Complete', `Generated ${newFindings.length} findings and ${newRecs.length} recommendations`);
+				} else {
+					toasts.info('No Issues Found', 'System analysis found no new issues');
+				}
+			} else {
+				toasts.info('No Signals', 'No new signals to analyze');
+			}
+		} catch (error) {
+			toasts.error('Analysis Failed', error instanceof Error ? error.message : 'Unknown error');
+		} finally {
+			isGeneratingSignals = false;
+		}
+	}
+
+	function getAutonomyColor(score: number): string {
+		if (score >= 0.7) return 'text-eco-400';
+		if (score >= 0.5) return 'text-warning-400';
+		return 'text-red-400';
+	}
+
+	function getFragilityColor(score: number): string {
+		if (score <= 0.3) return 'text-eco-400';
+		if (score <= 0.5) return 'text-warning-400';
+		return 'text-red-400';
+	}
+
+	function getEcoColor(score: number): string {
+		if (score <= 0.3) return 'text-eco-400';
+		if (score <= 0.5) return 'text-warning-400';
+		return 'text-red-400';
 	}
 </script>
 
@@ -188,13 +298,19 @@
 				<div>
 					<h2 class="text-lg font-semibold text-surface-100">System Health: <span class="capitalize">{systemHealth}</span></h2>
 					<p class="text-sm text-surface-400">
-						{$findings.length} active findings · {recommendations.length} recommendations
+						{$findings.length} active findings - {recommendations.length} recommendations
 					</p>
 				</div>
 			</div>
-			<Badge variant={systemHealth === 'healthy' ? 'success' : systemHealth === 'warning' ? 'warning' : 'danger'}>
-				{systemHealth.toUpperCase()}
-			</Badge>
+			<div class="flex items-center gap-3">
+				<Button variant="secondary" size="sm" on:click={handleGenerateSignals} loading={isGeneratingSignals}>
+					<RefreshCw size={14} />
+					Run Analysis
+				</Button>
+				<Badge variant={systemHealth === 'healthy' ? 'success' : systemHealth === 'warning' ? 'warning' : 'danger'}>
+					{systemHealth.toUpperCase()}
+				</Badge>
+			</div>
 		</div>
 	</Card>
 
@@ -214,13 +330,13 @@
 				title="Critical"
 				value={criticalCount}
 				icon={AlertTriangle}
-				color="danger"
+				color={criticalCount > 0 ? 'danger' : 'success'}
 			/>
 			<StatCard
 				title="Moderate"
 				value={moderateCount}
 				icon={Activity}
-				color="warning"
+				color={moderateCount > 2 ? 'warning' : 'primary'}
 			/>
 			<StatCard
 				title="Recommendations"
@@ -239,30 +355,43 @@
 						View All <ArrowRight size={14} />
 					</Button>
 				</div>
-				<div class="space-y-3">
-					{#each $findings.slice(0, 4) as finding}
-						<div class="p-3 rounded-lg bg-surface-800/50 border-l-2 {finding.severity === 'critical' ? 'border-red-500' : finding.severity === 'moderate' ? 'border-warning-500' : 'border-primary-500'}">
-							<div class="flex items-start gap-3">
-								<svelte:component
-									this={findingTypeIcons[finding.findingType] ?? Activity}
-									size={18}
-									class="{finding.severity === 'critical' ? 'text-red-400' : finding.severity === 'moderate' ? 'text-warning-400' : 'text-primary-400'} mt-0.5"
-								/>
-								<div class="flex-1 min-w-0">
-									<p class="text-sm text-surface-200">{finding.summary}</p>
-									<div class="flex items-center gap-2 mt-1">
-										<Badge variant={severityColors[finding.severity]} size="sm">
-											{finding.severity}
-										</Badge>
-										<span class="text-xs text-surface-500">{finding.confidence}</span>
-										<span class="text-xs text-surface-500">·</span>
-										<span class="text-xs text-surface-500">{formatTime(finding.createdAt)}</span>
+				{#if $findings.length === 0}
+					<EmptyState
+						title="No findings"
+						description="Run analysis to detect system issues"
+						icon={CheckCircle}
+					>
+						<Button slot="action" variant="secondary" on:click={handleGenerateSignals} loading={isGeneratingSignals}>
+							<RefreshCw size={14} />
+							Run Analysis
+						</Button>
+					</EmptyState>
+				{:else}
+					<div class="space-y-3">
+						{#each $findings.slice(0, 4) as finding}
+							<div class="p-3 rounded-lg bg-surface-800/50 border-l-2 {finding.severity === 'critical' ? 'border-red-500' : finding.severity === 'moderate' ? 'border-warning-500' : 'border-primary-500'}">
+								<div class="flex items-start gap-3">
+									<svelte:component
+										this={findingTypeIcons[finding.findingType] ?? Activity}
+										size={18}
+										class="{finding.severity === 'critical' ? 'text-red-400' : finding.severity === 'moderate' ? 'text-warning-400' : 'text-primary-400'} mt-0.5"
+									/>
+									<div class="flex-1 min-w-0">
+										<p class="text-sm text-surface-200">{finding.summary}</p>
+										<div class="flex items-center gap-2 mt-1">
+											<Badge variant={severityColors[finding.severity]} size="sm">
+												{finding.severity}
+											</Badge>
+											<span class="text-xs text-surface-500">{finding.confidence}</span>
+											<span class="text-xs text-surface-500">-</span>
+											<span class="text-xs text-surface-500">{formatTime(finding.createdAt)}</span>
+										</div>
 									</div>
 								</div>
 							</div>
-						</div>
-					{/each}
-				</div>
+						{/each}
+					</div>
+				{/if}
 			</Card>
 
 			<!-- Recommendations -->
@@ -271,82 +400,112 @@
 					<h3 class="section-header mb-0">Recommendations</h3>
 					<Badge variant="primary">{recommendations.length} pending</Badge>
 				</div>
-				<div class="space-y-3">
-					{#each recommendations as rec}
-						<div class="p-4 rounded-lg bg-surface-800/50">
-							<div class="flex items-center gap-2 mb-2">
-								<Lightbulb size={16} class="text-primary-400" />
-								<Badge variant="info" size="sm">{rec.targetSystem}</Badge>
-								<Badge variant={severityColors[rec.severity]} size="sm">{rec.severity}</Badge>
+				{#if recommendations.length === 0}
+					<EmptyState
+						title="No recommendations"
+						description="System is operating normally"
+						icon={CheckCircle}
+					/>
+				{:else}
+					<div class="space-y-3">
+						{#each recommendations.slice(0, 3) as rec}
+							<div class="p-4 rounded-lg bg-surface-800/50">
+								<div class="flex items-center gap-2 mb-2">
+									<Lightbulb size={16} class="text-primary-400" />
+									<Badge variant="info" size="sm">{rec.targetSystem}</Badge>
+									<Badge variant={severityColors[rec.severity]} size="sm">{rec.severity}</Badge>
+								</div>
+								<p class="text-sm text-surface-200 mb-2">{rec.summary}</p>
+								<p class="text-xs text-surface-500 line-clamp-2">{rec.rationale}</p>
+								<div class="flex gap-2 mt-3">
+									<Button size="sm" variant="primary" on:click={() => handleReviewRecommendation(rec)}>Review</Button>
+									<Button size="sm" variant="ghost" on:click={() => handleDismissRecommendation(rec)}>Dismiss</Button>
+								</div>
 							</div>
-							<p class="text-sm text-surface-200 mb-2">{rec.summary}</p>
-							<p class="text-xs text-surface-500">{rec.rationale}</p>
-							<div class="flex gap-2 mt-3">
-								<Button size="sm" variant="primary" on:click={() => handleReviewRecommendation(rec)}>Review</Button>
-								<Button size="sm" variant="ghost" on:click={() => handleDismissRecommendation(rec)}>Dismiss</Button>
-							</div>
-						</div>
-					{/each}
-				</div>
+						{/each}
+					</div>
+				{/if}
 			</Card>
 		</div>
 
-		<!-- Indicator Trends -->
+		<!-- System Indicators - Now calculated from real data -->
 		<Card class="mt-6">
 			<h3 class="section-header">System Indicators</h3>
 			<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 				<div>
 					<div class="flex items-center justify-between mb-2">
 						<span class="text-sm text-surface-400">Autonomy Index</span>
-						<span class="text-lg font-semibold text-eco-400">0.72</span>
+						<span class="text-lg font-semibold {getAutonomyColor(autonomyIndex)}">{autonomyIndex.toFixed(2)}</span>
 					</div>
-					<ProgressBar value={72} max={100} color="success" />
-					<p class="text-xs text-surface-500 mt-1">Target: > 0.7</p>
+					<ProgressBar value={autonomyIndex * 100} max={100} color={autonomyIndex >= 0.7 ? 'success' : autonomyIndex >= 0.5 ? 'warning' : 'danger'} />
+					<p class="text-xs text-surface-500 mt-1">Target: &gt; 0.7 (self-governance capacity)</p>
 				</div>
 				<div>
 					<div class="flex items-center justify-between mb-2">
 						<span class="text-sm text-surface-400">Fragility Index</span>
-						<span class="text-lg font-semibold text-warning-400">0.38</span>
+						<span class="text-lg font-semibold {getFragilityColor(fragilityIndex)}">{fragilityIndex.toFixed(2)}</span>
 					</div>
-					<ProgressBar value={38} max={100} color="warning" />
-					<p class="text-xs text-surface-500 mt-1">Target: &lt; 0.3</p>
+					<ProgressBar value={fragilityIndex * 100} max={100} color={fragilityIndex <= 0.3 ? 'success' : fragilityIndex <= 0.5 ? 'warning' : 'danger'} />
+					<p class="text-xs text-surface-500 mt-1">Target: &lt; 0.3 (system resilience)</p>
 				</div>
 				<div>
 					<div class="flex items-center justify-between mb-2">
-						<span class="text-sm text-surface-400">Ecological Score</span>
-						<span class="text-lg font-semibold text-primary-400">0.31</span>
+						<span class="text-sm text-surface-400">Avg Ecological Score</span>
+						<span class="text-lg font-semibold {getEcoColor(avgEcoScore)}">{avgEcoScore.toFixed(2)}</span>
 					</div>
-					<ProgressBar value={69} max={100} color="primary" />
-					<p class="text-xs text-surface-500 mt-1">Target: &lt; 0.5</p>
+					<ProgressBar value={(1 - avgEcoScore) * 100} max={100} color={avgEcoScore <= 0.3 ? 'success' : avgEcoScore <= 0.5 ? 'warning' : 'danger'} />
+					<p class="text-xs text-surface-500 mt-1">Target: &lt; 0.5 (ecological impact)</p>
 				</div>
+			</div>
+			<div class="mt-4 p-3 rounded-lg bg-surface-800/30 text-sm text-surface-400">
+				<p><strong>How indicators are calculated:</strong> Autonomy reflects governance participation, labor verification, and task completion. Fragility measures blocked tasks, critical findings, and material scarcity. Ecological score averages across certified designs.</p>
 			</div>
 		</Card>
 
 	{:else if activeTab === 'findings'}
 		<Card>
-			<h3 class="section-header">All Diagnostic Findings</h3>
-			<div class="space-y-4">
-				{#each $findings as finding}
-					<div class="p-4 rounded-lg bg-surface-800/50 border-l-4 {finding.severity === 'critical' ? 'border-red-500' : finding.severity === 'moderate' ? 'border-warning-500' : finding.severity === 'low' ? 'border-primary-500' : 'border-surface-600'}">
-						<div class="flex items-start justify-between mb-2">
-							<div class="flex items-center gap-2">
-								<Badge variant={severityColors[finding.severity]}>{finding.severity}</Badge>
-								<Badge variant="info">{findingTypeLabels[finding.findingType]}</Badge>
-							</div>
-							<span class="text-xs text-surface-500">{formatTime(finding.createdAt)}</span>
-						</div>
-						<h4 class="text-surface-100 font-medium mb-1">{finding.summary}</h4>
-						<p class="text-sm text-surface-400 mb-3">{finding.rationale}</p>
-						<div class="flex flex-wrap gap-2">
-							{#each Object.entries(finding.indicators) as [key, value]}
-								<span class="px-2 py-1 rounded bg-surface-700 text-xs text-surface-300">
-									{key}: {typeof value === 'number' ? value.toFixed(2) : value}
-								</span>
-							{/each}
-						</div>
-					</div>
-				{/each}
+			<div class="flex items-center justify-between mb-4">
+				<h3 class="section-header mb-0">All Diagnostic Findings</h3>
+				<Button variant="secondary" size="sm" on:click={handleGenerateSignals} loading={isGeneratingSignals}>
+					<RefreshCw size={14} />
+					Refresh Analysis
+				</Button>
 			</div>
+			{#if $findings.length === 0}
+				<EmptyState
+					title="No findings"
+					description="Run analysis to detect system issues"
+					icon={CheckCircle}
+				>
+					<Button slot="action" variant="secondary" on:click={handleGenerateSignals} loading={isGeneratingSignals}>
+						<RefreshCw size={14} />
+						Run Analysis
+					</Button>
+				</EmptyState>
+			{:else}
+				<div class="space-y-4">
+					{#each $findings as finding}
+						<div class="p-4 rounded-lg bg-surface-800/50 border-l-4 {finding.severity === 'critical' ? 'border-red-500' : finding.severity === 'moderate' ? 'border-warning-500' : finding.severity === 'low' ? 'border-primary-500' : 'border-surface-600'}">
+							<div class="flex items-start justify-between mb-2">
+								<div class="flex items-center gap-2">
+									<Badge variant={severityColors[finding.severity]}>{finding.severity}</Badge>
+									<Badge variant="info">{findingTypeLabels[finding.findingType]}</Badge>
+								</div>
+								<span class="text-xs text-surface-500">{formatTime(finding.createdAt)}</span>
+							</div>
+							<h4 class="text-surface-100 font-medium mb-1">{finding.summary}</h4>
+							<p class="text-sm text-surface-400 mb-3">{finding.rationale}</p>
+							<div class="flex flex-wrap gap-2">
+								{#each Object.entries(finding.indicators) as [key, value]}
+									<span class="px-2 py-1 rounded bg-surface-700 text-xs text-surface-300">
+										{key}: {typeof value === 'number' ? value.toFixed(2) : value}
+									</span>
+								{/each}
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
 		</Card>
 
 	{:else if activeTab === 'recommendations'}
@@ -394,7 +553,7 @@
 			{#if $memories.length === 0}
 				<EmptyState
 					title="No memory records"
-					description="Record learnings to build institutional knowledge"
+					description="Record learnings to build institutional knowledge for peers"
 					icon={Brain}
 				>
 					<Button slot="action" variant="primary" on:click={() => showRecordLearningModal = true}>
@@ -437,6 +596,9 @@
 				<h4 class="text-sm font-medium text-surface-400 mb-1">Rationale</h4>
 				<p class="text-surface-300">{selectedRecommendation.rationale}</p>
 			</div>
+			<div class="p-3 rounded-lg bg-surface-800/50 text-sm text-surface-400">
+				<p><strong>Action:</strong> Accept to route this recommendation to the {selectedRecommendation.targetSystem} system, or modify/dismiss as needed.</p>
+			</div>
 		</div>
 	{/if}
 	<svelte:fragment slot="footer">
@@ -475,7 +637,10 @@
 		</div>
 		<div>
 			<label class="label">Narrative</label>
-			<textarea class="input min-h-[120px] resize-y" placeholder="Describe the learning, context, and implications..." bind:value={learningNarrative}></textarea>
+			<textarea class="input min-h-[120px] resize-y" placeholder="Describe the learning, context, and implications for future peer reference..." bind:value={learningNarrative}></textarea>
+		</div>
+		<div class="p-3 rounded-lg bg-primary-500/10 border border-primary-500/20 text-sm text-surface-300">
+			<p><strong>Peer Benefit:</strong> This learning will be stored in institutional memory and available to all peers in the federation.</p>
 		</div>
 	</div>
 	<svelte:fragment slot="footer">
